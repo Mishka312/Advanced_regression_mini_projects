@@ -1,0 +1,794 @@
+---
+title: ""
+author: ""
+format:
+  typst:
+    toc: false
+---
+```{=typst}
+#align(center + horizon)[
+  #text(size: 24pt, weight: "bold")[
+    STA5090Z: Advanced Regression
+  ]
+
+  #v(1.5cm)
+
+  #text(size: 16pt)[
+    Mishka Ramraj
+  ]
+
+  #v(0.4cm)
+
+  #text(size: 14pt)[
+    RMRMIS001
+  ]
+
+  #v(1.5cm)
+
+  #v(0.4cm)
+
+  #text(size: 14pt)[
+    Mini Project 1: GAMS
+  ]
+]
+
+#pagebreak()
+```
+
+```{=typst}
+#outline(title: [Table of contents], depth: 3)
+#pagebreak()
+
+```
+
+
+# Introduction
+
+Generalized additive models (GAMs) are an extension of generalized linear models that allow the relationship between a response and predictor variable(s) to be modelled using smooth curves. This allows nonlinear patterns in the data to be modelled flexibly while retaining reasonable interpretability.  
+
+The smooth functions are represented using basis functions, which collectively make up the basis matrix. This basis matrix is used in the model-fitting process. The degree of smoothness is controlled by a penalty, with a smoothing parameter determining the extent to which functions are penalised.  
+
+The basis dimension can vary depending on how much flexibility is made available to the curve. However, the curve is not necessarily fitted to be as flexible as it can be. This is because the process of regularization determines the appropriate penalty and, consequently, the ideal level of smoothness or "wiggliness" of the curve.  
+
+The basis dimension can therefore be thought of as determining the maximum available flexibility, while the estimated degrees of freedom (EDF) represents the amount of flexibility that is actually used by the fitted curve.  
+
+This study aims to investigate the sensitivity of GAMs to the basis dimension under different sample size conditions. For the first part of this study, simulated data sets of varying sample sizes will be used. Thereafter, a real-world data set of Walleye fish will be used to evaluate whether the findings from the simulation study are also observed in real-world data.
+
+
+
+# Methods
+
+
+## Simulation study
+
+A simulation study was conducted to investigate the sensitivity of generalized additive models (GAMs) to the choice of basis dimension under different sample sizes. Three sample sizes were considered: $n=50$, $n=150$, and $n=500$. For each sample size, fish ages were generated from a uniform distribution between 1 and 20 years. The data set is simulated based on the realistic range of age, length and weight of the Walleye fish. The life span of these organisms are approximately 20 years, while they reach lengths of 91.4cm.
+
+
+Fish length was simulated using a nonlinear growth relationship based on a von Bertalanffy-type growth curve (Campbell and Phillips, 1972),
+
+$$
+L = 90(1-\exp(-0.20A))+\epsilon_L,
+$$
+
+where $A$ is age, $L$ is length in centimetres, and $\epsilon_L \sim N(0,2^2)$. Negative or zero simulated lengths were replaced with a minimum value of 1 cm.
+
+Weight was subsequently generated as a nonlinear function of length,
+
+$$
+W = 0.000012L^3+\epsilon_W,
+$$
+
+where $\epsilon_W \sim N(0,0.5^2)$. Simulated weights were constrained to be positive.
+
+The resulting simulated data therefore contained nonlinear relationships between age, length, and weight. The same data-generating process was used for all three sample sizes, allowing the effect of sample size on GAM fitting to be investigated.
+
+## GAM fitting
+
+For each simulated data set, GAMs were fitted with age as the response and smooth functions of length and weight as predictors:
+
+$$
+A_i = \beta_0 + f_1(L_i) + f_2(W_i) + \epsilon_i,
+$$
+
+where $f_1$ and $f_2$ are smooth functions estimated from the data.
+
+The GAMs were fitted using the mgcv package in R with restricted maximum likelihood (REML) estimation. To investigate sensitivity to the basis dimension, three values of $k$ were considered: $k=3$, $k=5$, and $k=10$. The same value of $k$ was used for both smooth terms within each model.
+
+The basis dimension represents the maximum flexibility available to each smooth. It does not directly determine the final complexity of the fitted curve, since the smoothing parameter controls the amount of penalisation applied during model fitting. Consequently, models with different values of $k$ can produce similar fitted curves when the estimated smoothing parameter sufficiently penalises unnecessary complexity.
+
+Model diagnostics were assessed using gam.check(), with particular attention given to the estimated degrees of freedom and the $k$-index. Fitted smooths were also examined graphically using plot.gam().
+
+A linear regression model,
+
+$$
+A_i = \beta_0+\beta_1L_i+\beta_2W_i+\epsilon_i,
+$$
+
+was fitted for comparison with the GAMs. This provided a baseline model in which the relationships between age and the predictors were constrained to be linear.
+
+## Real-world data application
+
+The simulation study was followed by an application to the WalleyeErie2 data set from the FSAdata package. The data contain measurements of Walleye fish, including age, total length, and weight.
+
+Observations containing missing values were removed before analysis. Exploratory plots were used to examine the relationships between age, length, and weight and to describe the distributions of the variables.
+
+The same modelling strategy used for the simulated data was then applied to the Walleye data. GAMs were fitted using smooth functions of total length (tl) and weight (w), with basis dimensions of $k=3$, $k=5$, and $k=10$:
+
+$$
+A_i = \beta_0 + f_1(TL_i) + f_2(W_i) + \epsilon_i.
+$$
+
+All models were fitted using REML. The fitted smooths, estimated degrees of freedom, and GAM diagnostics were examined to determine whether the fitted relationships were sensitive to the chosen basis dimension.
+
+A multiple linear regression model containing total length and weight was also fitted as a baseline comparison.
+
+## Comparison of basis dimensions
+
+The results from the simulated and real-world data were compared across the three basis dimensions. Particular attention was given to whether increasing the basis dimension resulted in substantially different fitted smooths model performance.
+
+The comparison was used to distinguish between the maximum flexibility allowed by the basis dimension and the effective flexibility actually used by the fitted model. This allowed the sensitivity of GAM fits to basis dimension to be considered across different sample sizes and in the real-world application.
+
+
+
+
+# Results
+## Simulated Data
+```{r}
+#| message: false
+#| warning: false
+#| include: false
+#install.packages("FSA")
+#install.packages("FSAdata")
+library(splines)
+library(mgcv)
+library(FSA)
+library(FSAdata)
+library(plotly)
+#data(package = "FSAdata")
+#data(AHerringChile)
+#data(EuroPerchTJ)
+
+#data(YERockfish)
+#?YERockfish
+
+data(WalleyeErie2)
+summary(WalleyeErie2)
+sum(is.na(WalleyeErie2))
+```
+
+```{r SimData}
+#| message: false
+#| warning: false
+#| include: false
+
+# The data set is simulated based on the realistic range of age, length and weight of the Walleye fish. The life span of these organisms are approximately 20 years, while they reach lengths of 91.4cm.
+
+
+# The walleye fish grows to 90 cm [1].
+
+# these will act as the length variable
+set.seed(8)
+
+n_a <- 50
+n_b <- 150
+n_c <- 500
+
+# simulate ages
+age_a <- runif(n_a, 1, 20)
+age_b <- runif(n_b, 1, 20)
+age_c <- runif(n_c, 1, 20)
+
+ 
+# Length: von Bertalanffy-like growth eqn (***refernce paper here)
+# Maximum length approx 90 cm
+
+length_a <- 90 * (1 - exp(-0.20 * age_a)) + rnorm(n_a, 0, 2)
+length_b <- 90 * (1 - exp(-0.20 * age_b)) + rnorm(n_b, 0, 2)
+length_c <- 90 * (1 - exp(-0.20 * age_c)) + rnorm(n_c, 0, 2)
+
+
+# only allow positive lengths
+length_a <- pmax(length_a, 1)
+length_b <- pmax(length_b, 1)
+length_c <- pmax(length_c, 1)
+
+
+# Weight: nonlinear relationship with length
+
+weight_a <- 0.000012 * length_a^3 + rnorm(n_a, 0, 0.5)
+weight_b <- 0.000012 * length_b^3 + rnorm(n_b, 0, 0.5)
+weight_c <- 0.000012 * length_c^3 + rnorm(n_c, 0, 0.5)
+
+
+# Make sure weights are positive
+weight_a <- pmax(weight_a, 0.1)
+weight_b <- pmax(weight_b, 0.1)
+weight_c <- pmax(weight_c, 0.1)
+
+
+df_a <- data.frame(length = length_a, weight = weight_a, age = age_a)
+df_b <- data.frame(length = length_b, weight = weight_b, age = age_b)
+df_c <- data.frame(length = length_c, weight = weight_c, age = age_c)
+```
+
+
+```{r fig.cap="Plots of the simulated data of varying sample sizes of 50"}
+#| message: false
+#| warning: false
+#| include: false
+
+par(mfrow = c(2, 3))
+
+plot(df_a$length, df_a$age, xlab = "Length (cm)", ylab = "Age (years)", main = "Age vs Length", col = 'forestgreen')
+plot(df_b$length, df_b$age, xlab = "Length (cm)", ylab = "Age (years)", main = "Age vs Length", col = 'forestgreen')
+plot(df_c$length, df_c$age, xlab = "Length (cm)", ylab = "Age (years)", main = "Age vs Length", col = 'forestgreen')
+
+
+plot(df_a$weight,df_a$age,  xlab = "Weight",ylab = "Age (years)", main = "Age vs Weight", col = 'magenta4')
+plot(df_b$weight,df_b$age,  xlab = "Weight",ylab = "Age (years)", main = "Age vs Weight", col = 'magenta4')
+plot(df_c$weight,df_c$age,  xlab = "Weight",ylab = "Age (years)", main = "Age vs Weight", col = 'magenta4')
+
+
+
+
+```
+
+
+
+```{r SimLM}
+#| include: false
+# fitting a linear model for a base comparison
+lm_sim_a <- lm(age ~ length + weight, df_a)
+lm_sim_b <- lm(age ~ length + weight, df_b)
+lm_sim_c <- lm(age ~ length + weight, df_c)
+
+summary(lm_sim_a)
+summary(lm_sim_b)
+summary(lm_sim_c)
+
+length_prediction_vals <- seq(1, 90, length.out = 500)
+weight_prediction_vals <- seq(min(df_c$weight), max(df_c$weight), length.out = 500)
+# predictions for curve
+# vary x1, keep x2 constant at its mean
+new_data1_a <- data.frame(length = length_prediction_vals, weight = median(df_a$weight))
+new_data1_b <- data.frame(length = length_prediction_vals, weight = median(df_b$weight))
+new_data1_c <- data.frame(length = length_prediction_vals, weight = median(df_c$weight))
+
+predicted1_a <- predict(lm_sim_a, newdata = new_data1_a)
+predicted1_b <- predict(lm_sim_b, newdata = new_data1_b)
+predicted1_c <- predict(lm_sim_c, newdata = new_data1_c)
+
+
+# vary x2, keep x1 constant at its mean
+new_data2_a <- data.frame(length = median(df_a$length), weight = weight_prediction_vals)
+new_data2_b <- data.frame(length = median(df_b$length), weight = weight_prediction_vals)
+new_data2_c <- data.frame(length = median(df_c$length), weight = weight_prediction_vals)
+
+predicted2_a <- predict(lm_sim_a, newdata = new_data2_a)
+predicted2_b <- predict(lm_sim_b, newdata = new_data2_b)
+predicted2_c <- predict(lm_sim_c, newdata = new_data2_c)
+
+
+
+lm_results <- data.frame(
+  Sample_size = c(50, 150, 500),
+  
+  Intercept = c(
+    -1.98199,
+    0.19736,
+    0.40748
+  ),
+  
+  Length_coef = c(
+    0.05065,
+    0.01310,
+    0.01230
+  ),
+  
+  Weight_coef = c(
+    1.71974,
+    1.85611,
+    1.78808
+  ),
+  
+  R_squared = c(
+    0.8800,
+    0.9073,
+    0.9007
+  ),
+  
+  Adjusted_R2 = c(
+    0.8749,
+    0.9060,
+    0.9003
+  ),
+  
+  Residual_SE = c(
+    1.907,
+    1.756,
+    1.750
+  )
+)
+
+lm_results
+
+```
+
+
+@tbl-sim-lm show the model criterion for the linear models fit to the simulated data set. In general, the linear models performed very well considering that the data was generated as non linear. The lowest adjusted $R^2$ value (0.87) is associated with the model fit to the smallest data set (n = 50), and the largest value was achieved by the mdoerately sized data set (n = 150). Although the difference in the highest and second highest adjusted $R^2$ values was just 0.01. Hence, this cannot be interpreted too extensively. Apart from minor differences in the coefficients of length and weight, the intercept is the statistic that varied the most. The smallest data set has an intercept of nearly -2, while it was extimated to be atleast 0.2 with more data available. The residual sum of squares did not differ severely (maximum difference was 0.16). As expected, the model fit to the smallest data set had the highest error (1.91). 
+
+::: {#tbl-sim-lm}
+| Sample_size| Intercept| Length_coef| Weight_coef| R_squared| Adjusted_R2| Residual_SE|
+|-----------:|---------:|-----------:|-----------:|---------:|-----------:|-----------:|
+|          50|     -1.98|        0.05|        1.72|      0.88|        0.87|        1.91|
+|         150|      0.20|        0.01|        1.86|      0.91|        0.91|        1.76|
+|         500|      0.41|        0.01|        1.79|      0.90|        0.90|        1.75|
+Table: Results from linear models fitted to the simulated data sets of varying sample size.
+:::
+
+
+The plots in Figure 1 show the fitted line. It can be seen that a linear model does well to estimate the age-weight relationship. However, age and length are strongly nonlinear, resulting in a bad fit. 
+```{r, fig.cap="Data sets of different sizes with linear models fit"}
+#| echo: false
+
+
+par(mfrow = c(2, 3))
+
+
+plot(df_a$length, df_a$age, xlab = "Length (cm)", ylab = "Age (years)", main = "Age vs Length", col = 'forestgreen')
+lines(length_prediction_vals, predicted1_a, lwd = 3)
+
+plot(df_b$length, df_b$age, xlab = "Length (cm)", ylab = "Age (years)", main = "Age vs Length", col = 'forestgreen')
+lines(length_prediction_vals, predicted1_b, lwd = 3)
+
+plot(df_c$length, df_c$age, xlab = "Length (cm)", ylab = "Age (years)", main = "Age vs Length", col = 'forestgreen')
+lines(length_prediction_vals, predicted1_c, lwd = 3)
+
+
+plot(df_a$weight,df_a$age,  xlab = "Weight",ylab = "Age (years)", main = "Age vs Weight", col = 'magenta4')
+lines(weight_prediction_vals, predicted2_a, lwd = 3)
+
+plot(df_b$weight,df_b$age,  xlab = "Weight",ylab = "Age (years)", main = "Age vs Weight", col = 'magenta4')
+lines(weight_prediction_vals, predicted2_b, lwd = 3)
+
+plot(df_c$weight,df_c$age,  xlab = "Weight",ylab = "Age (years)", main = "Age vs Weight", col = 'magenta4')
+lines(weight_prediction_vals, predicted2_c, lwd = 3)
+
+
+
+
+
+
+```
+
+```{r 3dPlots, eval=FALSE, include=FALSE}
+# points plotted outside of grid :()
+
+# Create a grid of x1 and x2 values
+x1_grid <- seq(1, 90, length.out = 30)
+x2_grid <- seq(min(x2_a), max(x2_a), length.out = 30)
+grid_a <- expand.grid(x1_a = x1_grid, x2_a = x2_grid)
+
+# Predict y values
+grid_a$y_pred <- predict(lm_sim_a, newdata = grid_a)
+
+
+# repeat for samples b and c
+
+grid_b <- expand.grid(x1_b = x1_grid, x2_b = x2_grid)
+grid_b$y_pred <- predict(lm_sim_b, newdata = grid_b)
+
+grid_c <- expand.grid(x1_c = x1_grid, x2_c = x2_grid)
+grid_c$y_pred <- predict(lm_sim_c, newdata = grid_c)
+
+
+
+# Convert predictions into a matrix
+z_a <- matrix(grid_a$y_pred, nrow = length(x1_grid), ncol = length(x2_grid))
+
+# Plot regression plane
+p_a <- persp(
+  x1_grid, 
+  x2_grid,
+  z_a,
+  xlab = "Length",
+  ylab = "Weight",
+  zlab = "Age",
+  theta = 40,
+  phi = 25,
+  col = "lightblue",
+  shade = 0.5)
+
+points(
+  trans3d(x1_a, x2_a, y1_a, p_a),
+  col = "red",
+  pch = 16)
+
+
+
+
+
+# Convert predictions into a matrix
+z_b <- matrix(grid_b$y_pred, nrow = length(x1_grid), ncol = length(x2_grid))
+
+# Plot regression plane
+p_b <- persp(
+  x1_grid,
+  x2_grid,
+  z_b,
+  xlab = "Length",
+  ylab = "Weight",
+  zlab = "Age",
+  theta = 40,
+  phi = 25,
+  col = "lightblue",
+  shade = 0.5)
+
+points(
+  trans3d(x1_b, x2_b, y1_b, p_b),
+  col = "red",
+  pch = 16)
+
+
+
+
+
+
+
+# Convert predictions into a matrix
+z_c <- matrix(grid_c$y_pred, nrow = length(x1_grid), ncol = length(x2_grid))
+
+# Plot regression plane
+p_c <- persp(
+  x1_grid,
+  x2_grid,
+  z_c,
+  xlab = "Length",
+  ylab = "Weight",
+  zlab = "Age",
+  theta = 40,
+  phi = 25,
+  col = "lightblue",
+  shade = 0.5)
+
+points(
+  trans3d(x1_c, x2_c, y1_c, p_c),
+  col = "red",
+  pch = 16)
+
+```
+
+
+
+
+```{r SimGAMs}
+#| include: false
+# fit different gams to the simulated data 
+
+## data set a
+gam_a1 <- gam(age ~ s(length, k = 3) + s(weight, k = 3), data = df_a, method = 'REML') # tried 2, below min k allowed
+gam.check(gam_a1)
+summary(gam_a1)
+
+gam_a2 <- gam(age ~ s(length, k = 5) + s(weight, k = 5), data = df_a, method = 'REML') 
+gam.check(gam_a2)
+summary(gam_a2)
+
+gam_a3 <- gam(age ~ s(length, k = 10) + s(weight, k = 10), data = df_a, method = 'REML') 
+gam.check(gam_a3)
+summary(gam_a3)
+
+## data set b
+gam_b1 <- gam(age ~ s(length, k = 3) + s(weight, k = 3), data = df_b, method = 'REML') 
+gam.check(gam_b1)
+summary(gam_b1)
+
+gam_b2 <- gam(age ~ s(length, k = 5) + s(weight, k = 5), data = df_b, method = 'REML') 
+gam.check(gam_b2)
+summary(gam_b2)
+
+gam_b3 <- gam(age ~ s(length, k = 10) + s(weight, k = 10), data = df_b, method = 'REML') 
+gam.check(gam_b3)
+summary(gam_b3)
+
+## data set c
+gam_c1 <- gam(age ~ s(length, k = 3) + s(weight, k = 3), data = df_c, method = 'REML') 
+gam.check(gam_c1)
+summary(gam_c1)
+
+gam_c2 <- gam(age ~ s(length, k = 5) + s(weight, k = 5), data = df_c, method = 'REML') 
+gam.check(gam_c2)
+summary(gam_c2)
+
+gam_c3 <- gam(age ~ s(length, k = 10) + s(weight, k = 10), data = df_c, method = 'REML') 
+gam.check(gam_c3)
+summary(gam_c3)
+
+
+
+sim_results <- data.frame(
+  Sample_size = c(
+    50, 50, 50,
+    150, 150, 150,
+    500, 500, 500
+  ),
+  
+  k = c(
+    3, 5, 10,
+    3, 5, 10,
+    3, 5, 10
+  ),
+  
+  EDF_length = c(
+    1.906, 3.675, 4.653,
+    1.973, 3.815, 5.476,
+    1.993, 3.921, 7.501
+  ),
+  
+  EDF_weight = c(
+    1.928, 1.000, 1.000,
+    1.941, 1.000, 1.000,
+    1.988, 2.168, 1.001
+  ),
+  
+  Adjusted_R2 = c(
+    0.925, 0.933, 0.933,
+    0.937, 0.942, 0.942,
+    0.941, 0.947, 0.948
+  ),
+  
+  Deviance_explained = c(
+    93.1, 93.9, 94.0,
+    93.8, 94.4, 94.4,
+    94.2, 94.7, 94.9
+  ),
+  
+  
+  Scale = c(
+    2.1654, 1.9519, 1.9578,
+    2.0733, 1.9039, 1.9080,
+    1.8101, 1.6362, 1.6049
+  )
+)
+
+sim_results
+
+```
+
+
+The results from the 9 different GAM models applied to the simulated data sets are displayed in @tbl-sim-gams. For the smallest data set (n = 50), there is a rather small difference in the deviances explained while varying k. Regardless, the highest deviance explained was for the model with the smallest basis dimension. Similarly, the adjusted $R^2$ differed by only 0.01 amongst the 3 models fit to the small data set. The scale criterion is the highest for the model with the smallest basis dimension. This implies that it has more unexplained residual variation than the models with the larger basis. For the first model, the effective degrees of freedom is closer to 2 for both variables, indicating non-linearity. However, once the basis size increases, weight is estimated more linearly, while length becomes increasingly non linear.  
+
+
+The data set with 150 observations had very similar results, except the adjusted $R^2$ was slightly higher (and constant), and length has a stronger non linear relationship with age than it did using the smallest data set. Using 500 observations yielded similar results, except now there is a nonlinear pattern detected consistently for weight for the 2 smaller basis dimension models. The model with the largest basis dimension estimated the EDF of weight to be exactly 1, implying linearity. EDF of length is 7.5 indicating strong non linearity. Scale is in general lower when using a larger data set, but  adjusted $R^2$ and deviance explained is barely affected by changes in sample size of basis dimension.
+
+
+::: {#tbl-sim-gams}
+| Sample_size|  k| EDF_length| EDF_weight| Adjusted_R2| Deviance_explained| Scale|
+|-----------:|--:|----------:|----------:|-----------:|------------------:|-----:|
+|          50|  3|       1.91|       1.93|        0.92|               93.1|  2.17|
+|          50|  5|       3.67|       1.00|        0.93|               93.9|  1.95|
+|          50| 10|       4.65|       1.00|        0.93|               94.0|  1.96|
+|         150|  3|       1.97|       1.94|        0.94|               93.8|  2.07|
+|         150|  5|       3.82|       1.00|        0.94|               94.4|  1.90|
+|         150| 10|       5.48|       1.00|        0.94|               94.4|  1.91|
+|         500|  3|       1.99|       1.99|        0.94|               94.2|  1.81|
+|         500|  5|       3.92|       2.17|        0.95|               94.7|  1.64|
+|         500| 10|       7.50|       1.00|        0.95|               94.9|  1.60|
+
+Table: Results from the Gams fitted to the simulated data sets of varying size, while using different basis size (k) constraints.
+:::
+
+
+## WalleyeErie2 Data
+
+```{r EDA}
+#| include: false
+dim(WalleyeErie2)
+str(WalleyeErie2)
+head(WalleyeErie2)
+summary(WalleyeErie2)
+
+anyNA(WalleyeErie2)
+NA_vals <- sum(is.na(WalleyeErie2))
+WalleyeErie2 <- na.omit(WalleyeErie2)
+```
+
+Figure 2 shows that the non-linearity and extent thereof is visually very similar to that of the simulated data. 
+
+```{r, fig.cap="Plots of the age, length and weight of the fish."}
+#| echo: false
+
+par(mfrow = c(1, 3))
+plot(WalleyeErie2$tl, WalleyeErie2$age, xlab = 'Length', ylab = "Age")
+plot(WalleyeErie2$w, WalleyeErie2$age, xlab = "Weight", ylab = "Age")
+plot(WalleyeErie2$tl, WalleyeErie2$w, xlab = "Length", ylab = "Weight")
+```
+
+Figure 3 shows that age and length increase together and is slightly non linear in relationship. Most fish are between 400 and 600 cm. By age 5 and length 550cm, almost all fish are mature. 
+
+```{r, fig.cap= "Summary plots for the fish data.", fig.height= 8, fig.width= 6}
+#| echo: false
+par(mfrow = c(2, 2), pch = 19)
+
+
+# Length vs Age
+plot(tl ~ age, data = WalleyeErie2, ylab = "Total Length (cm)", xlab = "Age")
+
+# Distribution of length
+hist(WalleyeErie2$tl, xlab = "Total Length (cm)",main = "")
+
+# Proportion mature by age
+tbl1 <- with(WalleyeErie2, table(age, mat))
+ptbl1 <- prop.table(tbl1, margin = 1)
+
+plot(ptbl1[, 2] ~ as.numeric(row.names(ptbl1)), type = "l", xlab = "Age", ylab = "Proportion Mature")
+
+# Proportion mature by length
+tbl2 <- with(WalleyeErie2, table(tl, mat))
+ptbl2 <- prop.table(tbl2, margin = 1)
+
+plot(ptbl2[, 2] ~ as.numeric(row.names(ptbl2)), type = "l", xlab = "Length", ylab = "Proportion Mature")
+
+
+
+
+
+
+```
+
+```{r RealDatLM}
+#| include: false
+# fit linear model to real data set
+
+wall <- WalleyeErie2 # rename it to be a shoter name
+
+wall_lm <- lm(age ~ tl + w, data = wall)
+
+summary(wall_lm)
+
+
+
+
+length_prediction_vals_wall <- seq(min(wall$tl), max(wall$tl), length.out = 500)
+weight_prediction_vals_wall <- seq(min(wall$w), max(wall$w), length.out = 500)
+
+# predictions for curve
+# vary x1, keep x2 constant at its mean, but median more robust
+
+
+new_data_wall_length <- data.frame(length = length_prediction_vals_wall, weight = median(wall$w))
+
+predicted_wall_on_l <- predict(lm_sim_a, newdata = new_data1_a)
+
+
+# vary x2, keep x1 constant at its median
+new_data_wall_weight <- data.frame(length = median(wall$tl), weight = weight_prediction_vals_wall)
+
+predicted_wall_on_w <- predict(lm_sim_a, newdata = new_data2_a)
+
+
+
+par(mfrow = c(1, 2))
+plot(WalleyeErie2$tl, WalleyeErie2$age, xlab = 'Length', ylab = "Age", main = "Age vs Length", col = 'forestgreen')
+lines(length_prediction_vals_wall, predicted_wall_on_l, lwd = 3)
+
+plot(WalleyeErie2$w, WalleyeErie2$age, xlab = "Weight", ylab = "Age", main = "Age vs Weight", col = 'magenta4')
+lines(weight_prediction_vals_wall, predicted_wall_on_w, lwd = 3)
+
+
+
+wall_lm_results <- data.frame(
+  Model = "Linear model",
+  Intercept = -2.717,
+  Length_coef = 0.008656,
+  Weight_coef = 0.001734,
+  R_squared = 0.6685,
+  Adjusted_R2 = 0.6685,
+  Residual_SE = 1.271
+)
+
+
+
+
+
+
+```
+
+@tbl-real-lm shows that the average age was estimated to be negative (-2.72). This is unrealistic. The coefficients for length and weight were 0.01 and 0. However, the adjusted $R^2$ is 0.67 which is a moderately performing model
+
+::: {#tbl-real-lm}
+|Model        | Intercept| Length_coef| Weight_coef| R_squared| Adjusted_R2| Residual_SE|
+|:------------|---------:|-----------:|-----------:|---------:|-----------:|-----------:|
+|Linear model |     -2.72|        0.01|           0|      0.67|        0.67|        1.27|
+
+Table: Results from the linear model fitted to the WalleyeErie2 data.
+:::
+
+
+
+
+
+
+
+
+
+
+```{r realDatGAMs}
+#| include: false
+
+gam_wall1 <- gam(age ~ s(tl, k = 3) + s(w, k = 3), data = wall, method = 'REML') # tried 2, below min k allowed
+gam.check(gam_wall1)
+plot.gam(gam_wall1)
+gam_wall1s <- summary(gam_wall1)
+
+gam_wall2 <- gam(age ~ s(tl, k = 5) + s(w, k = 5), data = wall, method = 'REML') 
+gam.check(gam_wall2)
+plot.gam(gam_wall2)
+summary(gam_wall2)
+
+gam_wall3 <- gam(age ~ s(tl, k = 10) + s(w, k = 10), data = wall, method = 'REML') 
+gam.check(gam_wall3)
+plot.gam(gam_wall3)
+summary(gam_wall3)
+
+
+wall_results <- data.frame(
+  Model = c("GAM 1", "GAM 2", "GAM 3"),
+  k = c(3, 5, 10),
+  EDF_length = c(1.999, 3.980, 8.615),
+  EDF_weight = c(1.999, 3.983, 8.176),
+  Adjusted_R2 = c(0.678, 0.682, 0.684),
+  Deviance_explained = c(67.8, 68.3, 68.4),
+  Scale = c(1.5689, 1.5484, 1.5418)
+)
+
+wall_results
+
+```
+
+The GAM models differed slightly while varying the basis dimension. Deviance explained, adjusted $R^2$ and scale statistics were very close amongst the models. There is consistent non-linearity detected in both variables across all 3 models.
+
+::: {#tbl-real-gams}
+|Model |  k| EDF_length| EDF_weight| Adjusted_R2| Deviance_explained| Scale|
+|:-----|--:|----------:|----------:|-----------:|------------------:|-----:|
+|GAM 1 |  3|       2.00|       2.00|        0.68|               67.8|  1.57|
+|GAM 2 |  5|       3.98|       3.98|        0.68|               68.3|  1.55|
+|GAM 3 | 10|       8.62|       8.18|        0.68|               68.4|  1.54|
+
+Table: Results from the Gams fitted to the WalleyeErie2 data using different basis size (k) constraints.
+:::
+
+# Discussion
+
+
+The results demonstrate that the effect of basis dimension on GAM fitting depends on both the sample size and the underlying relationships between the variables. Overall, increasing the basis dimension allowed the fitted smooths to become more flexible, as reflected by increases in the effective degrees of freedom (EDF). However, this additional flexibility resulted in relatively small improvements in overall model fit, particularly for the simulated data. This suggests that the basis dimension primarily affected the complexity of the fitted functions rather than substantially changing the overall explanatory performance of the models.
+
+For the simulated data, the GAMs explained approximately 93–95% of the deviance across all sample sizes and basis dimensions. The adjusted $R^2$ values showed a similar pattern, with only small differences between models fitted using different values of k. In contrast, the EDF of length increased substantially as the basis dimension increased. For example, for n=500, the EDF for length increased from 1.99 when $k=3$ to 7.50 when $k=10$. This demonstrates that increasing the basis dimension provided the model with additional flexibility that could be used by the smoothing procedure. Importantly, the increase in EDF did not correspond to a similarly large improvement in deviance explained or adjusted $R^2$. This supports the distinction between basis dimension and effective complexity: k determines the maximum flexibility available to the smooth, while the smoothing procedure determines how much of that flexibility is actually used.
+
+The relatively high performance of the linear models provides an additional point of comparison. Although the simulated relationships were generated using nonlinear functions, the linear models still produced adjusted $R^2$ values between 0.87 and 0.91. This may be because a linear model can provide a reasonable approximation to a nonlinear relationship over the range of values represented in the simulated data. Furthermore, both length and weight were included as predictors, meaning that the combined linear effects could explain a large proportion of the variation in age even though the individual relationships were not strictly linear. The GAMs nevertheless produced slightly higher adjusted $R^2$ values and lower scale values, indicating that allowing nonlinear effects provided some improvement in fit. The improvement was relatively small, however, particularly when compared with the additional flexibility available to the GAMs.
+
+The results for the simulated data also suggest that sample size influenced the stability of the estimated smooths. The EDF for length increased more substantially at larger sample sizes when a larger basis dimension was available. With n=50, the maximum EDF for length was 4.65, compared with 7.50 for $n=500$. This is consistent with the larger data sets providing more information with which to estimate complex nonlinear patterns. The scale also generally decreased as sample size increased, while deviance explained and adjusted $R^2$ changed relatively little. Thus, increasing the sample size appeared to provide more stable estimates of the underlying relationships without substantially changing the overall model performance.
+
+The EDF results for weight were less consistent than those for length. In several models, the estimated EDF was close to 1, indicating that the fitted effect was approximately linear after penalization. This does not necessarily contradict the nonlinear function used to generate weight, because the GAM models age as the response rather than weight. The relevant question is therefore whether weight contributes a nonlinear relationship with age after accounting for length. Since length and weight are themselves strongly related, much of the information provided by weight may overlap with that provided by length. The smoothing penalty may therefore have had little reason to retain a highly nonlinear weight effect. This illustrates why the EDF should be interpreted in the context of the complete model rather than solely from the function used to generate an individual variable.
+
+The Walleye data provided a useful real-world comparison. Unlike the simulated data, the linear model explained only 66.9% of the variation in age, while the GAMs explained approximately 67.8–68.4%. Both length and weight showed consistently nonlinear effects in the GAMs, with EDF increasing from approximately 2 when $k=3$ to approximately 8 when k=10. However, the differences in adjusted $R^2$, deviance explained and scale were again small. Increasing k from 5 to 10, for example, increased the deviance explained by only 0.1 percentage points. This suggests that providing substantially more flexibility did not lead to a substantial improvement in overall explanatory performance for these data.
+
+An important implication of the real-data results is that a larger basis dimension can substantially change the estimated complexity of a smooth without producing a substantial change in model-level fit statistics. Therefore, selecting k solely because a larger value produces a higher EDF would not necessarily be justified. The purpose of increasing k is to ensure that sufficient flexibility is available, rather than to force the smooth to become more complex. The gam.check() results and the estimated EDF should therefore be considered alongside model fit and the shape of the fitted smooths when assessing whether the chosen basis dimension is adequate.
+
+Several limitations should be considered when interpreting these findings. First, only one simulated data set was generated for each sample size. Consequently, the observed differences may partly reflect the particular random samples generated rather than systematic effects of sample size. Repeating the simulation many times for each combination of sample size and basis dimension would provide distributions of EDF, deviance explained, scale and prediction error, allowing the sensitivity of the results to be assessed more reliably. Second, the simulated relationships were based on specific functional forms and noise levels. Different degrees of nonlinearity, noise levels and predictor correlations could produce different results.
+
+Another limitation is that the analysis primarily used in-sample measures such as adjusted $R^2$, deviance explained and scale. These measures describe how well the models fit the observed data but do not directly assess their ability to predict new observations. A stronger investigation could therefore include a training-test split or cross-validation and compare prediction error across basis dimensions. This would also help determine whether the additional flexibility associated with larger values of k improves generalization or simply allows the model to fit the observed data more closely.
+
+Further studies could extend the simulation by using multiple repetitions for each sample size and by considering a wider range of basis dimensions. The study could also vary the amount of noise and the strength of the nonlinear effects. Examining situations in which the true relationship is linear, moderately nonlinear and highly nonlinear would provide a clearer assessment of when basis-dimension sensitivity becomes important. Finally, the real-data analysis could be extended by examining the fitted smooths and diagnostic results in greater detail and by using cross-validation to compare predictive performance.
+
+Overall, the results suggest that increasing the basis dimension mainly increased the potential and estimated complexity of the smooth functions, while producing relatively small changes in overall model fit. The effect became more apparent for the larger simulated sample, where the model had more information with which to estimate complex patterns. The findings therefore support the view that basis dimension should provide sufficient flexibility for the underlying relationship, but increasing it substantially does not necessarily lead to substantially better model performance.
+
+
+
+# References
+
+* National Wildlife Federation. (2019). Walleye | National Wildlife Federation. [online] Available at: https://www.nwf.org/Educational-Resources/Wildlife-Guide/Fish/Walleye [Accessed 22 Aug. 2026].
+
+* NDOW. (2025). Walleye - NDOW. [online] Available at: https://www.ndow.org/species/walleye/ [Accessed 22 Aug. 2026].
+
+* Campbell, N.A. and Phillips, B.F., 1972. The Von Bertalanffy growth curve and its application to capture—Recapture data in fisheries biology. ICES Journal of Marine Science, 34(2), pp.295-299.

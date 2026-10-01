@@ -1,0 +1,954 @@
+---
+title: ""
+author: ""
+format:
+  typst:
+    toc: false
+---
+```{=typst}
+#align(center + horizon)[
+  #text(size: 24pt, weight: "bold")[
+    STA5090Z: Advanced Regression
+  ]
+
+  #v(1.5cm)
+
+  #text(size: 16pt)[
+    Mishka Ramraj
+  ]
+
+  #v(0.4cm)
+
+  #text(size: 14pt)[
+    RMRMIS001
+  ]
+
+  #v(1.5cm)
+
+  #v(0.4cm)
+
+  #text(size: 14pt)[
+    Mini Project 2: Multivariate Adaptive Regression Splines
+  ]
+]
+
+#pagebreak()
+```
+
+```{=typst}
+#outline(title: [Table of contents], depth: 3)
+#pagebreak()
+
+```
+
+
+# Introduction
+
+Multivariate Adaptive Regression Splines (MARS) is a flexible regression method that can model nonlinear relationships and interactions between predictors. This flexibility allows MARS to capture complex patterns in data, but it can also result in models that are unnecessarily complicated and potentially overfit the training data. To control model complexity, MARS uses a penalty parameter in its generalized cross-validation (GCV) criterion, with larger penalty values placing a greater cost on additional model terms.  
+
+The appropriate level of penalization may depend on the complexity of the underlying relationship being modelled. A simple relationship may benefit from stronger penalization to prevent unnecessary terms from being included, whereas a more complex relationship may require less penalization to retain important structure. This project investigates this possibility using a simulation study. Data are generated from three relationships of increasing complexity, and MARS models are fitted using several different penalty values. Predictive performance is evaluated using test-set mean squared error, while the number of model terms is used to assess the resulting model complexity.
+
+Therefore, the aim of this study is to investigate whether the penalty value associated with the lowest predictive error changes as the complexity of the underlying relationship increases.
+
+
+# Methods
+
+## Theory
+
+### Multivariate Adaptive Regression Splines
+
+Multivariate Adaptive Regression Splines (MARS) (Friedman, 1991) is a non-parametric regression method that can model non-linear relationships between a response variable and predictor variables. Rather than specifying a particular functional form for the relationship, MARS constructs the regression function from piece-wise linear basis functions.
+
+The general MARS model is (Friedman, 1991; Zhang and Goh, 2013)
+
+$$
+\hat{f}(\mathbf{x}) =
+\beta_0 + \sum_{m=1}^{M}\beta_m B_m(\mathbf{x}),
+$$
+
+where $\beta_0$ is the intercept, M is the number of basis functions included in the final model, $\beta_m$ is the coefficient associated with the m-th basis function, and $B_m(\mathbf{x})$ is a basis function constructed from the predictor variables.
+
+The basis functions are constructed using hinge functions. A hinge function is defined as
+
+$$
+h(x-t)_+ = \max(0,x-t) \text{ or } h(t-x)_+ = \max(0,t-x)
+$$
+
+in the reflected direction, where t is a knot. For example,
+
+
+
+$$
+h(x-t)_+ =
+\begin{cases}
+0 & \qquad x\leq t\\
+x-t & \qquad x>t. 
+\end{cases}
+$$
+This is also referred to as a positive truncated basis function, and is zero on one side of the knot and linear on the other side. This allows the fitted relationship to change its slope at selected values of the predictor. Multiple hinge functions can also be multiplied together to represent interactions between predictors. A general basis function can be written as
+
+$$
+B_m(\mathbf{x})
+=
+\prod_{k=1}^{K_m}
+\left[
+s_{km}(x_{v(k,m)}-t_{km})
+\right]_+,
+$$
+
+where $K_m$ is the number of hinge functions multiplied together, $s_{km}\in\{-1,+1\}$ determines the direction of the hinge, $x_{v(k,m)}$ identifies the predictor being used, and $t_{km}$ is the corresponding knot (Friedman, 1991).
+
+The maximum value of $K_m$ determines the maximum interaction order that can be represented by the model. For example, $K_m=1$ represents a univariate effect, whereas $K_m=2$ allows two predictors to interact within a basis function.
+
+### Estimation of the MARS model
+
+Once the basis functions have been selected, the MARS model can be expressed as an ordinary linear regression in the constructed basis functions as
+
+$$
+\mathbf{y}=\mathbf{B}\boldsymbol{\beta}+\boldsymbol{\epsilon},
+$$
+
+where $\mathbf{B}$ is the design matrix containing the selected basis functions.
+
+For a fixed set of basis functions, the regression coefficients are estimated by least squares. The ordinary least-squares estimator is
+
+$$
+\hat{\boldsymbol{\beta}}
+=
+(\mathbf{B}^{T}\mathbf{B})^{-1}
+\mathbf{B}^{T}\mathbf{y},
+$$
+
+provided that $\mathbf{B}^{T}\mathbf{B}$ is invertible.
+
+The important distinction is that MARS does not assume the basis functions are known beforehand. The basis functions, their knots, and their interactions are selected adaptively from the data. Once this structure has been selected, the coefficients are estimated using least squares.  
+
+
+### Forward selection
+
+MARS begins with an intercept-only model and constructs a relatively large set of candidate basis functions through a forward selection procedure.
+
+For a candidate predictor $x_j$ and knot t, a pair of reflected hinge functions can be generated:
+
+$$
+B_m(\mathbf{x})\max(0,x_j-t) \text{ and  } B_m(\mathbf{x})\max(0,t-x_j),
+$$
+
+where $B_m(\mathbf{x})$ is an existing basis function.
+
+The two functions allow the relationship to change differently on either side of the candidate knot. Candidate basis functions are created using every observed value of the predictors. The basis function (individual) that results in the largest model improvement is added. The forward stage will likely produce a model that is more complex than necessary. To rectify this, the model is pruned.
+
+### Backward pruning
+
+The larger model produced by the forward stage is subsequently simplified using backward pruning. Individual basis functions are removed from the model. This is done at increments of 1 basis function at a time, by choosing which contributes the smallest improvement in RSS. This produces a sequence of nested models, with progressively fewer basis functions. This is done for various values of a penalty parameter (which penalizes model complexity). Backward pruning then selects the optimal penalty and the associated model.
+
+
+### Generalized Cross-Validation
+
+MARS uses a penalized measure of model fit to balance goodness of fit against model complexity. A general form of the Generalized Cross-Validation (GCV) criterion is (Friedman, 1991; Hastie et al., 2009; Zhang and Goh, 2013)
+
+$$
+GCV(M)
+=\frac{1}{N}
+\frac{RSS(M)}
+{\left[1-\frac{C(M)}{N}\right]^2},
+$$
+
+where C(M) is the effective complexity of model M, and is calculated as 
+
+$$C(M) = r + d \times \frac{r-1}{2}.$$
+N is the number of observations, d is the penalty and r is the number of linearly independent basis functions in the model (Zhang and Goh, 2013). This includes the intercept. RSS is calculated as 
+
+$$
+RSS(M)=\sum_{i=1}^{N}(y_i-\hat{y}_i)^2
+$$
+
+and measures how closely the model fits the observed data. A more flexible model will generally have a smaller residual sum of squares. However, increasing the number of basis functions also increases model complexity. The complexity term C(M) therefore increases the GCV criterion as complexity increases, providing a trade-off between model fit and model complexity. The model selected through GCV is the model that minimizes the generalized ctoss validation error.  
+
+The penalty parameter controls how strongly model complexity is penalized. If the penalty is increased, additional knots and/or complexity become more costly during model selection. Therefore, increasing the penalty generally encourages simpler fitted models. Hence, the magnitude of the penalty determines how much the model prioritizes parsimony over complexity.
+
+
+```{r}
+#| eval: false
+#| include: false
+#A penalty of zero represents a special case in which knots are not penalized, although the model terms themselves remain subject to the relevant complexity calculation. A setting corresponding to no complexity penalty removes this trade-off and reduces the criterion to the residual error per observation.
+```
+
+
+## Implementation
+
+All processing and analyses were conducted in R (R Core Team, 2026).
+
+### Simulation design
+
+A simulation study was conducted to investigate whether the appropriate MARS penalty depends on the complexity of the underlying data-generating relationship.
+
+Three levels of underlying relationship complexity were considered - simple, moderate and complex. For each simulated data-set, two predictor variables were generated independently from uniform distributions,
+
+$$
+X_1,X_2\sim U(0,1).
+$$
+
+The response was generated according to one of three underlying functions, with normally distributed random error added in each case.
+
+The simple relationship was defined as
+
+$$
+Y=2+2X_1+\epsilon,
+$$
+
+where $\epsilon\sim N(0,0.5^2).$
+
+This relationship contains a single linear effect and therefore provides a relatively simple underlying structure for the MARS model to recover.  
+
+
+
+The moderate relationship was defined as
+
+$$
+Y=
+2+2X_1+
+3(X_1-0.5)_+
++\epsilon.
+$$
+This introduces a nonlinear piece-wise structure while still involving only one predictor.  
+
+
+The complex relationship was defined as
+
+$$
+Y=
+2+2X_1+
+3(X_1-0.5)_+
++
+2(X_2-0.4)_+
++
+3X_1X_2
++\epsilon.
+$$
+
+This relationship contains several sources of complexity - a nonlinear effect of $X_1$, a nonlinear effect of $X_2$, and an interaction between $X_1$ and $X_2$.
+
+
+### Training and testing data
+
+For each simulation, a training data set containing 500 observations were generated. This was used for model fitting. Thereafter, a further 1000 observations were generated for prediction.  
+
+It is acknowledged that data is usually split into 80% and 20% for training and testing respectively. However, this is done when a specific data set need to be studied, and/or there is a lack of data. In this study, unlimited data is available. Furthermore, the test set is considerably large. This is because this study relies on the model performance (test error). Hence, accuracy of the prediction performance is prioritized. Furthermore, Friedman (1991) deduced that this method performs better when applied to data sets of moderate sizes (up to 1000 observations and 20 predictors),
+
+### MARS model specification
+
+The "earth" package (Milborrow et al., 2026) in R was used for model fitting. For each simulated training data set, a MARS model was fitted allowing a maximum interaction degree of two. This permits both individual predictor effects and two-way interactions to be represented. The same model structure was used across all three complexity scenarios so that differences in model performance could be attributed to the underlying relationship and the penalty rather than changes in the model specification.
+
+The investigation considered penalty (d) values ranging from 1 to 9. For each simulated data set, a separate MARS model was fitted for every value of d. Thus, for each combination of complexity and simulation, 9 different levels of penalization were compared. The complete simulation was repeated 100 times for each complexity level. The total number of fitted models was therefore $3\times100\times9=2700.$ For every fitted model, the following quantities were recorded:
+
+* the underlying complexity level (K, the number of terms in model);
+* the penalty value;
+* the number of terms in the fitted model
+* the test MSE; and
+* the training MSE, where MSE is calculated as 
+$$ MSE = \frac{1}{N}\sum_{i=1}^{N}(y_i-\hat{y}_i)^2 $$
+
+For each combination of complexity and penalty, the mean test MSE and mean number of model terms across the 100 simulations were calculated. The corresponding standard deviation was also calculated to describe the variability in statistics across simulations.
+
+
+The penalty associated with the smallest mean test MSE was then identified separately for each complexity level. The main comparison was done between these values.  
+
+It is important to distinguish between the purposes of the GCV and MSE. GCV is used internally to balance model fit and complexity during model selection, whereas test MSE evaluates the predictive performance of the fitted model on independent observations. Consequently, the penalty that produces the lowest average test MSE in this study is not necessarily the penalty that minimizes GCV. This distinction is central to the investigation, since the objective is to determine how the penalty affects out-of-sample predictive performance rather than merely the model selection criterion.
+
+
+
+
+# Results and Discussion
+
+
+Figure 1 shows that average MSE steadily decreases with increasing penalty for the simple and moderately complex models, whereas it gently increases in the complex model. The average MSE plateaus at penalty values of 5 and 6 for simple and moderate complexity models respectively (Figure 1; Table 1; Table 2(Appendix)). The standard deviation in the MSE value across the simulations for all complexities is fairly similar, and is the lowest for moderately complex models (Figure 1; Table 2(Appendix)).
+
+
+```{r Set-up}
+#| message: false
+#| warning: false
+#| include: false
+library(earth)
+library(knitr)
+library(dplyr)
+library(ggplot2)
+
+set.seed(8)
+
+n_train <- 500
+n_test <- 1000
+n_sim <- 100
+
+penalties <- seq(1, 9, length.out = 9)
+```
+
+
+```{r}
+#| message: false
+#| warning: false
+#| include: false
+# Generate data of  tthe three relationships
+generate_data <- function(n, complexity, sigma = 0.5) {
+  
+  x1 <- runif(n, 0, 1)
+  x2 <- runif(n, 0, 1)
+  
+  if (complexity == "Simple") {
+    
+    y <- 2 + 2*x1
+    
+  } else if (complexity == "Moderate") {
+    
+    y <- 2 + 2*x1 + 3*pmax(x1 - 0.5, 0)
+    
+  } else if (complexity == "Complex") {
+    
+    y <- 2 + 2*x1 + 3*pmax(x1 - 0.5, 0) + 2*pmax(x2 - 0.4, 0) + 3*x1*x2
+  }
+  
+  
+  # add random error and store as data frame
+  y <- y + rnorm(n, 0, sigma)
+  
+  data.frame(y, x1, x2)
+}
+```
+
+
+```{r}
+#| include: false
+# Run one sim
+train <- generate_data(n_train, "Simple")
+test <- generate_data(n_test, "Simple")
+
+# to store performance measures and calibration settings
+results <- data.frame()
+
+# fit mdel using each penalty level
+for (p in penalties) {
+  
+  model <- earth(y ~ x1 + x2, data = train, degree = 2, penalty = p)
+  
+  predictions <- predict(model, newdata = test)
+  
+  # (True Y - predicted Y)^2
+  test_mse <- mean((test$y - predictions)^2)
+  train_mse <- mean((train$y - predict(model))^2)
+  
+  n_terms <- ncol(model$bx)
+  
+  # store results
+  results <- rbind(results, 
+                   data.frame(penalty = p,  train_mse = train_mse, 
+                              test_mse = test_mse, n_terms = n_terms))
+}
+
+#results
+```
+
+
+```{r}
+#| message: false
+#| warning: false
+#| include: false
+
+# for each combination of complexity and penalty level, fit multiple models and 
+# take average performance measures 
+
+results <- data.frame()
+
+# for each complexity
+for (complexity in c("Simple", "Moderate", "Complex")) {
+  
+  # fit multiple models (of same structure)
+  for (sim in 1:n_sim) {
+    
+    #set.seed(27)
+    train <- generate_data(n_train, complexity)
+    
+    #set.seed(10)
+    test <- generate_data(n_test, complexity)
+    
+    # for every penalty level
+    for (p in penalties) {
+      
+      model <- earth(y ~ x1 + x2, data = train, degree = 2, penalty = p)
+      
+      predictions <- predict(model, newdata = test)
+      
+      test_mse <- mean((test$y - predictions)^2)
+      
+      train_mse <- mean((train$y - predict(model))^2)
+      
+      n_terms <- ncol(model$bx)
+      
+      results <- rbind(results, 
+                       data.frame(complexity = complexity, 
+                                  simulation = sim, 
+                                  penalty = p, 
+                                  train_mse = train_mse, 
+                                  test_mse = test_mse, 
+                                  n_terms = n_terms))
+    }
+  }
+}
+```
+
+
+```{r}
+#| message: false
+#| warning: false
+#| include: false
+# Calculate the average test MSE
+
+summary_results <- results %>%
+  group_by(complexity, penalty) %>%
+  summarise(mean_test_mse = mean(test_mse), 
+            sd_test_mse = sd(test_mse), 
+            mean_train_mse = mean(train_mse),
+            sd_train_mse = sd(train_mse),
+            mean_n_terms = mean(n_terms),
+            sd_n_terms = sd(n_terms),
+            .groups = "drop")
+
+kable(summary_results, digits = 3, caption = "Table of summary results.")
+
+simple_summary_results <- summary_results[summary_results$complexity == 'Simple',]
+moderate_summary_results <- summary_results[summary_results$complexity == 'Moderate',]
+complex_summary_results <- summary_results[summary_results$complexity == 'Complex',]
+
+```
+
+
+```{r fig.cap="Average test MSE results for each complexity level while varying the extent of penalization."}
+#| message: false
+#| warning: false
+#| include: false
+# Plot the main result
+
+simple_summary_results <- summary_results[summary_results$complexity == 'Simple',]
+moderate_summary_results <- summary_results[summary_results$complexity == 'Moderate',]
+complex_summary_results <- summary_results[summary_results$complexity == 'Complex',]
+
+
+plot(simple_summary_results$penalty, simple_summary_results$mean_test_mse, type = 'p', lwd = 2, pch = 19, ylim = c(min(summary_results$mean_test_mse), max(summary_results$mean_test_mse)), col = "blue", xlab = "GCV penalty", ylab = "Mean test MSE", main = "Effect of penalization on predictive performance")
+lines(simple_summary_results$penalty, simple_summary_results$mean_test_mse, type = 'l', lwd = 2, col = "blue")
+
+lines(moderate_summary_results$penalty, moderate_summary_results$mean_test_mse, type = 'p', lwd = 2, pch = 19, col = "green4")
+lines(moderate_summary_results$penalty, moderate_summary_results$mean_test_mse, type = 'l', lwd = 2, col = "green4")
+
+lines(complex_summary_results$penalty, complex_summary_results$mean_test_mse, type = 'p', lwd = 2, pch = 19, col = "red2")
+lines(complex_summary_results$penalty, complex_summary_results$mean_test_mse, type = 'l', lwd = 2, col = "red2")
+
+
+legend("topright", lwd = c(2,2,2), col = c("blue", "green4", "red2"), legend = c("Simple", "Moderate", "Complex"), title = "Complexity", cex = 0.9)
+
+```
+
+
+
+```{r fig.cap="Average test MSE (± 1 sd) for each complexity level while varying the GCV penalty parameter.", fig.width=14, fig.height= 8}
+#| echo: false
+#| message: false
+#| warning: false
+
+# Common y-axis limits across all three plots,
+# including the error bars
+y_min <- min(
+  summary_results$mean_test_mse -
+    summary_results$sd_test_mse
+)
+
+y_max <- max(
+  summary_results$mean_test_mse +
+    summary_results$sd_test_mse
+)
+
+y_limits <- c(y_min, y_max)
+
+
+# Set up a 1 x 3 layout
+par(mfrow = c(1, 3))
+
+
+# -------------------------
+# Simple complexity
+# -------------------------
+
+plot(
+  simple_summary_results$penalty,
+  simple_summary_results$mean_test_mse,
+  type = "o",
+  lwd = 2,
+  pch = 19,
+  col = "blue",
+  ylim = y_limits,
+  xlab = "GCV penalty",
+  ylab = "Mean test MSE",
+  main = "Simple", cex.lab = 2, cex.main = 2, cex.axis = 1.5
+)
+
+arrows(
+  simple_summary_results$penalty,
+  simple_summary_results$mean_test_mse -
+    simple_summary_results$sd_test_mse,
+  simple_summary_results$penalty,
+  simple_summary_results$mean_test_mse +
+    simple_summary_results$sd_test_mse,
+  angle = 90,
+  code = 3,
+  length = 0.05,
+  col = "blue",
+  lwd = 1
+)
+
+
+# -------------------------
+# Moderate complexity
+# -------------------------
+
+plot(
+  moderate_summary_results$penalty,
+  moderate_summary_results$mean_test_mse,
+  type = "o",
+  lwd = 2,
+  pch = 19,
+  col = "green4",
+  ylim = y_limits,
+  xlab = "GCV penalty",
+  ylab = "Mean test MSE",
+  main = "Moderate", cex.lab = 2, cex.main = 2, cex.axis = 1.5
+)
+
+arrows(
+  moderate_summary_results$penalty,
+  moderate_summary_results$mean_test_mse -
+    moderate_summary_results$sd_test_mse,
+  moderate_summary_results$penalty,
+  moderate_summary_results$mean_test_mse +
+    moderate_summary_results$sd_test_mse,
+  angle = 90,
+  code = 3,
+  length = 0.05,
+  col = "green4",
+  lwd = 1
+)
+
+
+# -------------------------
+# Complex complexity
+# -------------------------
+
+plot(
+  complex_summary_results$penalty,
+  complex_summary_results$mean_test_mse,
+  type = "o",
+  lwd = 2,
+  pch = 19,
+  col = "red2",
+  ylim = y_limits,
+  xlab = "GCV penalty",
+  ylab = "Mean test MSE",
+  main = "Complex", cex.lab = 2, cex.main = 2, cex.axis = 1.5
+)
+
+arrows(
+  complex_summary_results$penalty,
+  complex_summary_results$mean_test_mse -
+    complex_summary_results$sd_test_mse,
+  complex_summary_results$penalty,
+  complex_summary_results$mean_test_mse +
+    complex_summary_results$sd_test_mse,
+  angle = 90,
+  code = 3,
+  length = 0.05,
+  col = "red2",
+  lwd = 1
+)
+
+```
+
+
+```{r fig.cap="Average number of terms (± 1 sd) in models for each complexity level while varying the GCV penalty parameter.", fig.height=8, fig.width=14}
+#| message: false
+#| warning: false
+#| include: false
+# Common y-axis limits across all three plots,
+# including the error bars
+y_min <- min(
+  summary_results$mean_n_terms -
+    summary_results$sd_n_terms
+)
+
+y_max <- max(
+  summary_results$mean_n_terms +
+    summary_results$sd_n_terms
+)
+
+y_limits <- c(y_min, y_max)
+
+
+# Set up a 1 x 3 layout
+par(mfrow = c(1, 3))
+
+
+# -------------------------
+# Simple complexity
+# -------------------------
+
+plot(
+  simple_summary_results$penalty,
+  simple_summary_results$mean_n_terms,
+  type = "o",
+  lwd = 2,
+  pch = 19,
+  col = "blue",
+  ylim = y_limits,
+  xlab = "GCV penalty",
+  ylab = "Mean number of terms",
+  main = "Simple", cex.lab = 2, cex.main = 2, cex.axis = 1.5
+)
+
+arrows(
+  simple_summary_results$penalty,
+  simple_summary_results$mean_n_terms -
+    simple_summary_results$sd_n_terms,
+  simple_summary_results$penalty,
+  simple_summary_results$mean_n_terms +
+    simple_summary_results$sd_n_terms,
+  angle = 90,
+  code = 3,
+  length = 0.05,
+  col = "blue",
+  lwd = 1
+)
+
+
+# -------------------------
+# Moderate complexity
+# -------------------------
+
+plot(
+  moderate_summary_results$penalty,
+  moderate_summary_results$mean_n_terms,
+  type = "o",
+  lwd = 2,
+  pch = 19,
+  col = "green4",
+  ylim = y_limits,
+  xlab = "GCV penalty",
+  ylab = "Mean number of terms",
+  main = "Moderate", cex.lab = 2, cex.main = 2, cex.axis = 1.5
+)
+
+arrows(
+  moderate_summary_results$penalty,
+  moderate_summary_results$mean_n_terms -
+    moderate_summary_results$sd_n_terms,
+  moderate_summary_results$penalty,
+  moderate_summary_results$mean_n_terms +
+    moderate_summary_results$sd_n_terms,
+  angle = 90,
+  code = 3,
+  length = 0.05,
+  col = "green4",
+  lwd = 1
+)
+
+
+# -------------------------
+# Complex complexity
+# -------------------------
+
+plot(
+  complex_summary_results$penalty,
+  complex_summary_results$mean_n_terms,
+  type = "o",
+  lwd = 2,
+  pch = 19,
+  col = "red2",
+  ylim = y_limits,
+  xlab = "GCV penalty",
+  ylab = "Mean number of terms",
+  main = "Complex", cex.lab = 2, cex.main = 2, cex.axis = 1.5
+)
+
+arrows(
+  complex_summary_results$penalty,
+  complex_summary_results$mean_n_terms -
+    complex_summary_results$sd_n_terms,
+  complex_summary_results$penalty,
+  complex_summary_results$mean_n_terms +
+    complex_summary_results$sd_n_terms,
+  angle = 90,
+  code = 3,
+  length = 0.05,
+  col = "red2",
+  lwd = 1
+)
+```
+
+
+
+```{r tab.cap="Optimal penalty values and model performance metrics for each model complexity"}
+#| message: false
+#| warning: false
+#| include: false
+# Identify the best penalty
+best_penalty <- summary_results %>%
+  group_by(complexity) %>%
+  slice_min(mean_test_mse, n = 1) %>%
+  select(complexity, penalty, mean_test_mse, mean_n_terms)
+
+kable(best_penalty, digits = 3, caption = "Average performance measures and the penalty that resulted in the lowest average test MSE for each complexity level")
+```
+
+::: {#tbl-penalty-comparison}
+
+|complexity | penalty| mean test mse| mean n terms|
+|:----------|-------:|-------------:|------------:|
+|Complex    |       1|         0.259|         7.76|
+|Moderate   |       6|         0.252|         3.01|
+|Simple     |       5|         0.252|         2.48|
+
+Table: Optimal penalty values and model performance metrics for each model complexity
+:::
+
+
+
+The number of terms in the model in relation to the penalty level displays the same pattern as the MSE values (Figure 2), except for the complex model, in which number of terms steadily decrease with penalization. In general, the number of terms in the model is indirectly proportional to the penalty. For the first 2 complexities, the variation in the number of terms in the model decreases as penalty increases; this variation in complex models appear to be steady. The moderately complex models tended to primarily select models with 3 terms from penalties of 7 onward (Figure 2).
+
+
+
+
+
+
+
+```{r fig.cap="Average number of terms (± 1 sd) in models for each complexity level while varying the GCV penalty parameter.", fig.height=8, fig.width=14}
+#| echo: false
+#| message: false
+#| warning: false
+# Common y-axis limits across all three plots,
+# including the error bars
+y_min <- min(
+  summary_results$mean_n_terms -
+    summary_results$sd_n_terms
+)
+
+y_max <- max(
+  summary_results$mean_n_terms +
+    summary_results$sd_n_terms
+)
+
+y_limits <- c(y_min, y_max)
+
+
+# Set up a 1 x 3 layout
+par(mfrow = c(1, 3))
+
+
+# -------------------------
+# Simple complexity
+# -------------------------
+
+plot(
+  simple_summary_results$penalty,
+  simple_summary_results$mean_n_terms,
+  type = "o",
+  lwd = 2,
+  pch = 19,
+  col = "blue",
+  ylim = y_limits,
+  xlab = "GCV penalty",
+  ylab = "Mean number of terms",
+  main = "Simple", cex.lab = 2, cex.main = 2, cex.axis = 1.5
+)
+
+arrows(
+  simple_summary_results$penalty,
+  simple_summary_results$mean_n_terms -
+    simple_summary_results$sd_n_terms,
+  simple_summary_results$penalty,
+  simple_summary_results$mean_n_terms +
+    simple_summary_results$sd_n_terms,
+  angle = 90,
+  code = 3,
+  length = 0.05,
+  col = "blue",
+  lwd = 1
+)
+
+
+# -------------------------
+# Moderate complexity
+# -------------------------
+
+plot(
+  moderate_summary_results$penalty,
+  moderate_summary_results$mean_n_terms,
+  type = "o",
+  lwd = 2,
+  pch = 19,
+  col = "green4",
+  ylim = y_limits,
+  xlab = "GCV penalty",
+  ylab = "Mean number of terms",
+  main = "Moderate", cex.lab = 2, cex.main = 2, cex.axis = 1.5
+)
+
+arrows(
+  moderate_summary_results$penalty,
+  moderate_summary_results$mean_n_terms -
+    moderate_summary_results$sd_n_terms,
+  moderate_summary_results$penalty,
+  moderate_summary_results$mean_n_terms +
+    moderate_summary_results$sd_n_terms,
+  angle = 90,
+  code = 3,
+  length = 0.05,
+  col = "green4",
+  lwd = 1
+)
+
+
+# -------------------------
+# Complex complexity
+# -------------------------
+
+plot(
+  complex_summary_results$penalty,
+  complex_summary_results$mean_n_terms,
+  type = "o",
+  lwd = 2,
+  pch = 19,
+  col = "red2",
+  ylim = y_limits,
+  xlab = "GCV penalty",
+  ylab = "Mean number of terms",
+  main = "Complex", cex.lab = 2, cex.main = 2, cex.axis = 1.5
+)
+
+arrows(
+  complex_summary_results$penalty,
+  complex_summary_results$mean_n_terms -
+    complex_summary_results$sd_n_terms,
+  complex_summary_results$penalty,
+  complex_summary_results$mean_n_terms +
+    complex_summary_results$sd_n_terms,
+  angle = 90,
+  code = 3,
+  length = 0.05,
+  col = "red2",
+  lwd = 1
+)
+```
+
+The optimal penalty levels, and the associated model performance statistics are reported in Table 1. The optimal GCV penalty for the simple model is 5, which results in an average MSE of 0.252 and approximately 3 terms in the model. The average MSE remained at this value for higher penalties (Table 2). Models of moderate complexity achieved their lowest average MSE of 0.252 as well at a penalty of 6, after which, it remained at 0.252 (Table 2).
+
+Complex models behaved completely different. Their model performance never decreased or plateaued. Instead, the average MSE increased slightly over the course of increasing penalties (Figure 1; Table 2). The lowest average MSE was 0.259 and was recorded for a penalty as small as 1 (Table 1).
+
+The contrasting patterns between the three complexity levels suggest that the relationship between the MARS penalty and predictive performance depends on the structure of the underlying data-generating function. The indirect relationship between complexity and flexibility is well established. However, the results show that the optimal penalty differs according to the true structure. For simpler models, higher penalty values are preferred. For complex models, low penalties yield the best results.
+
+For low complexity models, a simple structure needs to be fit. Low penalties allow too much of unnecessary flexibility, leading to low training errors but high test errors since the model is fitting to the observations and noise. When the penalty is increased, the model is restricted to simple structures, and is able to fit to to the general trend, leading to higher prediction capability. This pattern is consistent with the bias–variance trade-off, since additional basis functions may contribute little to predictive accuracy when the underlying function is relatively simple. The plateau observed at a penalty of 5 indicates that further penalisation provided little additional predictive benefit within the investigated range.
+
+A similar pattern was observed for the moderate relationship. Unlike the simple function, this relationship requires a hinge component to represent its piecewise-linear structure. Models of moderate complexity achieved their lowest average MSE of 0.252 at a penalty of 6, after which, it remained at 0.252 (Table 2). This suggests that sufficient flexibility was retained to represent the principal nonlinear feature, while additional model complexity provided limited improvement in out-of-sample prediction. The tendency for models with 3 terms to be selected from penalties of 7 onward (Figure 2) further suggests that the additional flexibility available at lower penalties was not necessary for maintaining predictive performance.
+
+When considering complex models, more flexibility is required to efficiently capture the pattern. When the model is penalised too extensively, knots and hinge functions become too expensive to add. This results in the model being too simple, and unable to explain the data structure. Therefore, the test MSE is low.
+
+The complex relationship contained two nonlinear effects and an interaction between X1 and X2, and consequently required greater flexibility to represent the data-generating structure. The observed increase in test MSE as the penalty increased is consistent with stronger penalisation removing basis functions that contribute to representing these nonlinear effects and interaction, thereby increasing approximation bias. The simultaneous decrease in model size and increase in MSE for the complex model provides further evidence that additional flexibility was useful for prediction in this scenario.
+
+The model-size results therefore provide further insight into the observed patterns. Increasing the penalty generally reduced the number of retained terms, illustrating how penalization controls model flexibility. For the simple and moderate relationships, the reduction in model size was accompanied by little change in test MSE once the performance plateau was reached. For the complex relationship, the increase in test MSE alongside decreasing model size suggests that additional flexibility was useful for prediction. Taken together, these findings indicate that model parsimony and predictive accuracy do not necessarily improve simultaneously; the effect of simplifying the model depends on the structure of the underlying relationship.
+
+Nevertheless, the differences in mean test MSE were relatively small, ranging from approximately 0.252 to 0.261. The numerical minimum should therefore not be interpreted as evidence that one penalty is substantially superior to all others. The standard deviations across simulations describe variability in the observed performance, but do not independently establish whether differences between mean MSE values are statistically meaningful.
+
+Several limitations should also be considered. First, the study examined only three specified data-generating functions, and the complexity scenarios differed in multiple respects, including the number of active predictors, nonlinear components, and presence of an interaction. The findings therefore apply to these particular functions rather than establishing a universal relationship between true complexity and the optimal penalty. Second, only integer penalty values from 1 to 9 were investigated. The lowest observed MSE at the boundary of this range in the complex scenario indicates that lower penalty values should be investigated. Finally, the conclusions are conditional on the selected sample sizes, noise variance, and maximum interaction degree.
+
+Overall, the simulation provides evidence that the penalty associated with the lowest average test MSE can differ across underlying relationship structures. Higher penalties produced similar minimum predictive errors for the simple and moderate scenarios, whereas lower penalties performed better for the complex scenario within the investigated range. The results are consistent with the principle that the amount of penalization should balance unnecessary model flexibility against the need to represent important features of the underlying relationship. However, further simulations would be required to establish how robust this pattern is to changes in the data-generating process and simulation settings.
+
+
+\newpage
+
+
+
+# Appendix
+
+```{r}
+#| message: false
+#| warning: false
+#| include: false
+# Calculate the average test MSE
+
+summary_results <- results %>%
+  group_by(complexity, penalty) %>%
+  summarise(mean_test_mse = mean(test_mse), 
+            sd_test_mse = sd(test_mse), 
+            mean_n_terms = mean(n_terms), 
+            .groups = "drop")
+
+summary_results <- as.data.frame(summary_results)
+colnames(summary_results) <- c("Complexity" , "Penalty", "Mean test mse", "SD test mse", "Mean n terms")
+
+kable(summary_results, digits = 3, caption = "Table of summary results.")
+```
+
+
+::: {#tbl-full-results1}
+|Complexity | Penalty| Mean test mse| SD test mse| Mean train mse| SD train mse| Mean n terms| SD n terms|
+|:----------|-------:|-------------:|-----------:|--------------:|------------:|------------:|----------:|
+|Complex    |       1|         0.259|       0.013|          0.244|        0.016|         7.76|      1.084|
+|Complex    |       2|         0.259|       0.013|          0.244|        0.016|         7.55|      1.029|
+|Complex    |       3|         0.260|       0.013|          0.245|        0.016|         7.26|      0.970|
+|Complex    |       4|         0.260|       0.014|          0.245|        0.016|         7.10|      0.859|
+|Complex    |       5|         0.260|       0.014|          0.245|        0.016|         7.01|      0.810|
+|Complex    |       6|         0.260|       0.014|          0.246|        0.016|         6.88|      0.769|
+|Complex    |       7|         0.261|       0.014|          0.247|        0.017|         6.73|      0.723|
+|Complex    |       8|         0.261|       0.014|          0.247|        0.017|         6.62|      0.736|
+|Complex    |       9|         0.261|       0.014|          0.247|        0.017|         6.56|      0.701|
+|Moderate   |       1|         0.259|       0.014|          0.242|        0.016|         5.75|      2.508|
+|Moderate   |       2|         0.256|       0.013|          0.244|        0.015|         4.60|      2.123|
+|Moderate   |       3|         0.254|       0.012|          0.246|        0.015|         3.77|      1.145|
+|Moderate   |       4|         0.254|       0.012|          0.247|        0.015|         3.42|      0.781|
+|Moderate   |       5|         0.253|       0.011|          0.248|        0.015|         3.20|      0.471|
+|Moderate   |       6|         0.252|       0.011|          0.248|        0.015|         3.09|      0.288|
+
+Table: Summary results per penalty-complexity combination.
+:::
+
+\newpage
+
+::: {#tbl-full-results2}
+|Complexity | Penalty| Mean test mse| SD test mse| Mean train mse| SD train mse| Mean n terms| SD n terms|
+|:----------|-------:|-------------:|-----------:|--------------:|------------:|------------:|----------:|
+|Moderate   |       7|         0.252|       0.011|          0.248|        0.015|         3.06|      0.239|
+|Moderate   |       8|         0.252|       0.011|          0.248|        0.015|         3.03|      0.171|
+|Moderate   |       9|         0.252|       0.011|          0.248|        0.015|         3.01|      0.100|
+|Simple     |       1|         0.261|       0.013|          0.239|        0.017|         6.82|      3.026|
+|Simple     |       2|         0.257|       0.014|          0.242|        0.018|         4.68|      2.335|
+|Simple     |       3|         0.254|       0.013|          0.245|        0.017|         3.55|      1.452|
+|Simple     |       4|         0.253|       0.012|          0.246|        0.017|         3.01|      1.068|
+|Simple     |       5|         0.252|       0.012|          0.247|        0.017|         2.77|      0.790|
+|Simple     |       6|         0.252|       0.012|          0.248|        0.017|         2.64|      0.644|
+|Simple     |       7|         0.252|       0.012|          0.248|        0.017|         2.56|      0.519|
+|Simple     |       8|         0.252|       0.012|          0.248|        0.016|         2.51|      0.522|
+|Simple     |       9|         0.252|       0.012|          0.248|        0.017|         2.48|      0.502|
+
+:::
+
+
+
+# References
+
+* Hastie, T., Tibshirani, R., Friedman, J.H. and Friedman, J.H., 2009. The elements of statistical learning: data mining, inference, and prediction (Vol. 2, pp. 1-758). New York: springer.
+
+* Zhang, W.G. and Goh, A.T.C., 2013. Multivariate adaptive regression splines for analysis of geotechnical engineering systems. Computers and Geotechnics, 48, pp.82-95.
+
+* Friedman, J.H., 1991. Multivariate adaptive regression splines. The annals of statistics, 19(1), pp.1-67.
+
+* R Core Team (2026). _R: A Language and Environment for Statistical Computing_. R Foundation for
+  Statistical Computing, Vienna, Austria. doi:10.32614/R.manuals <https://doi.org/10.32614/R.manuals>.
+  <https://www.R-project.org/>.
+
+* Milborrow S, Hastie T, Tibshirani R (2026). _earth: Multivariate Adaptive Regression Splines_.
+  doi:10.32614/CRAN.package.earth <https://doi.org/10.32614/CRAN.package.earth>. R package version 5.3.5,
+  <https://CRAN.R-project.org/package=earth>.

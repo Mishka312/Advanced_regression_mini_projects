@@ -1,0 +1,1165 @@
+---
+title: ""
+author: ""
+format:
+  typst:
+    toc: false
+---
+```{=typst}
+#align(center + horizon)[
+  #text(size: 24pt, weight: "bold")[
+    STA5090Z: Advanced Regression
+  ]
+
+  #v(1.5cm)
+
+  #text(size: 16pt)[
+    Mishka Ramraj
+  ]
+
+  #v(0.4cm)
+
+  #text(size: 14pt)[
+    RMRMIS001
+  ]
+
+  #v(1.5cm)
+
+  #v(0.4cm)
+
+  #text(size: 14pt)[
+    Mini Project 3: Regression
+  ]
+]
+
+#pagebreak()
+```
+
+```{=typst}
+#outline(title: [Table of contents], depth: 3)
+#pagebreak()
+
+```
+
+
+
+```{r}
+#| include: false
+library(MASS)
+library(glmnet)
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+
+
+simulate_data <- function(n, rho = 0, sigma = 1) {
+  
+  p <- 10 # number of predictors
+  
+  # Corr matrix
+  Sigma <- matrix(rho, p, p)
+  diag(Sigma) <- 1
+  
+  # Generate correlated predictors
+  X <- MASS::mvrnorm(n, mu = rep(0, p), Sigma = Sigma)
+  
+  # True coefficients
+  beta <- c(2, 1.5, 0, 0, -1, 0, 0, 0, 0, 0)
+  
+  # Calculate response with error
+  Y <- X %*% beta + rnorm(n, 0, sigma)
+  
+  data.frame(Y, X)
+}
+
+
+split_data <- function(dat, train_prop = 0.8) {
+  
+  n <- nrow(dat)
+  
+  train_index <- sample(1:n, size = floor(train_prop * n))
+  
+  train <- dat[train_index, ]
+  test <- dat[-train_index, ]
+  
+  list(
+    train = train,
+    test = test
+  )
+}
+
+
+
+
+forward_stepwise <- function(data) {
+  
+  # Full model: y explained by all other variables
+  full_model <- lm(Y ~ ., data = data)
+  
+  # Null model: intercept only
+  null_model <- lm(Y ~ 1, data = data)
+  
+  # Forward stepwise selection
+  forward_model <- step(
+    null_model,
+    scope = formula(full_model),
+    direction = "forward"
+  )
+  
+  return(forward_model)
+}
+
+
+
+entire_forward <- function(training_set, test_set) {
+  
+  # Perform forward stepwise selection on training data
+  forward_model <- forward_stepwise(training_set)
+  
+  # Predict y using the selected model on test data
+  predictions <- predict(forward_model, newdata = test_set)
+  
+  # Actual values
+  actual <- test_set$Y
+  
+  # Calculate RMSE
+  rmse <- sqrt(mean((actual - predictions)^2))
+  
+  # Calculate R-squared
+  r_squared <- 1 - sum((actual - predictions)^2) /
+                   sum((actual - mean(actual))^2)
+  
+  beta <- coef(forward_model)
+  
+  # Return results
+  results <- list(
+    model = forward_model,
+    beta = beta,
+    predictions = predictions,
+    RMSE = rmse,
+    R_squared = r_squared
+  )
+  
+  return(results)
+}
+
+
+
+
+
+backward_stepwise <- function(data) {
+  
+  # Full model: y explained by all predictors
+  full_model <- lm(Y ~ ., data = data)
+  
+  # Backward stepwise selection using AIC
+  backward_model <- step(
+    full_model,
+    direction = "backward")
+  
+  return(backward_model)
+}
+
+
+
+
+
+entire_backward <- function(training_set, test_set) {
+  
+  # Perform backward stepwise selection on training data
+  backward_model <- backward_stepwise(training_set)
+  
+  # Predict y using the selected model on test data
+  predictions <- predict(backward_model, newdata = test_set)
+  
+  # Actual values
+  actual <- test_set$Y
+  
+  # Calculate RMSE
+  rmse <- sqrt(mean((actual - predictions)^2))
+  
+  # Calculate R-squared
+  r_squared <- 1 - sum((actual-predictions)^2) / sum((actual-mean(actual))^2)
+  
+  
+  beta <- coef(backward_model)
+  
+  # Return results
+  results <- list(
+    model = backward_model,
+    beta = beta,
+    predictions = predictions,
+    RMSE = rmse,
+    R_squared = r_squared
+  )
+  
+  return(results)
+}
+
+
+
+
+
+entire_ridge <- function(training_set, test_set) {
+  
+  # Create predictor matrix and response for training data
+  # Create predictor matrix and response for training data
+  x_train <- as.matrix(training_set[, -1])
+  y_train <- training_set$Y
+  
+  # Create predictor matrix for test data
+  x_test <- as.matrix(test_set[, -1])
+  y_test <- test_set$Y
+  
+  # Perform ridge regression with cross-validation
+  ridge_model <- cv.glmnet(x_train,y_train, alpha = 0)
+  
+  # Predict on test data using optimal lambda
+  predictions <- predict(ridge_model, newx = x_test, s = "lambda.min")
+  
+  # Calculate RMSE
+  rmse <- sqrt( mean((y_test - predictions)^2))
+  
+  # Calculate R-squared
+  r_squared <- 1 - sum((y_test - predictions)^2) /sum((y_test - mean(y_test))^2)
+  
+  
+  beta <- as.vector(coef(ridge_model, s = "lambda.min"))
+  
+  names(beta) <- rownames(coef(ridge_model, s = "lambda.min"))
+  
+  
+  # Return results
+  results <- list(model = ridge_model, beta = beta, predictions = predictions,
+                  lambda = ridge_model$lambda.min, RMSE = rmse, 
+                  R_squared = r_squared)
+  
+  return(results)
+}
+
+
+
+
+
+entire_lasso <- function(training_set, test_set) {
+  
+  # Create predictor matrix and response for training data
+  x_train <- as.matrix(training_set[, -1])
+  y_train <- training_set$Y
+  
+  # Create predictor matrix for test data
+  x_test <- as.matrix(test_set[, -1])
+  y_test <- test_set$Y
+  
+  # Perform LASSO regression with cross-validation
+  lasso_model <- cv.glmnet(
+    x_train,
+    y_train,
+    alpha = 1
+  )
+  
+  # Predict on test data using optimal lambda
+  predictions <- predict(
+    lasso_model,
+    newx = x_test,
+    s = "lambda.min"
+  )
+  
+  # Calculate RMSE
+  rmse <- sqrt(
+    mean((y_test - predictions)^2)
+  )
+  
+  # Calculate R-squared
+  r_squared <- 1 -
+    sum((y_test - predictions)^2) /
+    sum((y_test - mean(y_test))^2)
+  
+  beta <- as.vector(
+    coef(lasso_model, s = "lambda.min")
+  )
+  
+  names(beta) <- rownames(
+    coef(lasso_model, s = "lambda.min")
+  )
+  
+  
+  # Return results
+  results <- list(model = lasso_model, beta = beta, predictions = predictions,
+                  lambda = lasso_model$lambda.min, RMSE = rmse, 
+                  R_squared = r_squared)
+  
+  return(results)
+}
+
+```
+
+
+
+
+```{r}
+#| include: false
+
+## pareto functions
+
+# Function to evaluate a subset-------------------------------------------------
+  
+  #evaluate_subset <- function(subset {
+evaluate_subset <- function(subset, X, Y) {
+  
+  # No predictors
+  if (length(subset) == 0) {
+    
+    r2 <- 0
+    
+  } else {
+    
+    # Select the required predictors
+    X_subset <- X[, subset, drop = FALSE]
+    
+    # Fit linear mod
+    model <- lm(
+      Y ~ .,
+      data = data.frame(Y = Y, X_subset)
+    )
+    
+    # Calculate R-squared stat
+    r2 <- summary(model)$r.squared
+  }
+  
+  list(subset = subset, size = length(subset), r2 = r2)
+}
+
+
+
+
+# Check if A dominates B ---------------------------------
+  dominates <- function(A, B) {
+    
+    # A must be at least as good as B
+    # on both objectives:
+    #   higher R2
+    #   smaller size
+    
+    no_worse <- (A$r2 >= B$r2 && A$size <= B$size)
+    
+    # A must be strictly better on at least one
+    better <- (A$r2 > B$r2 || A$size < B$size)
+    
+    no_worse && better
+  }
+
+
+
+
+
+pareto_subset_selection <- function(X, Y, k, iterations = 1000) {
+
+  
+  # Number of observations and predictors
+  n <- nrow(X)
+  p <- ncol(X)
+  
+  
+  # Start with empty subset
+  archive <- list(
+    evaluate_subset(integer(0), X = X, Y = Y)
+  )
+  
+  
+  # Main POSS loop ----
+
+  for (iteration in 1:iterations) {
+    
+    # Randomly select a sol from archive
+    parent_index <- sample(1:length(archive), size = 1)
+    
+    parent <- archive[[parent_index]]
+    
+    # Covert subset to binary vector
+    solution <- rep(0, p)
+    
+    # determine if susbet vec is viable (non zero)
+    # then assign same selection to solution (current) as in parent vec solution
+    if (length(parent$subset) > 0) {
+      solution[parent$subset] <- 1
+    }
+    
+    
+    # Implement Mutation - Each bit has prob 1/p of changing --
+
+    # generate p probabilities, if < 1/p, flip bit
+    mutation <- runif(p) < (1 / p)
+    
+    solution[mutation] <- 1 - solution[mutation]
+    
+    
+    # Eval new solution ------------
+    
+    # get indices of variables to be selected as predictors
+    new_subset <- which(solution == 1)
+    
+    candidate <- evaluate_subset(new_subset, X = X, Y = Y)
+    
+    
+    # Check if candidate is dominated ----------------
+    
+    candidate_dominated <- FALSE
+    
+    for (existing in archive) {
+      
+      # check if existing solutions dominates new candidate
+      if (dominates(existing, candidate)) {
+        candidate_dominated <- TRUE # if candidate dominaed, not added to archive
+        break
+      }
+    }
+    
+    
+    # Add candidate if it is not dominated-----------
+
+    if (!candidate_dominated) {
+      
+      # Remove solutions dominated by candidate
+      new_archive <- list()
+      
+      for (existing in archive) {
+        
+        if (!dominates(candidate, existing)) {
+          new_archive[[length(new_archive) + 1]] <- existing
+        }
+      }
+      
+      # Add candidate
+      new_archive[[length(new_archive) + 1]] <- candidate
+      
+      archive <- new_archive
+    }
+  }
+  
+  
+  # Keep only solutions satisfying maximum k -----------------------
+  # all others are infeasible according to the optimizatiin criteria
+  
+  feasible <- archive[
+    sapply(archive, function(x) x$size <= k)
+  ]
+  
+  
+  # Select solution with highest R2 -------------------
+  
+  r2_values <- sapply(feasible, function(x) x$r2)
+  
+  best_index <- which.max(r2_values)
+  
+  best <- feasible[[best_index]]
+  
+  
+  return(
+    list(selected_variables = best$subset, subset_size = best$size, 
+         r2 = best$r2, archive = archive))
+}
+
+
+
+
+
+
+
+entire_pareto <- function(training_set, test_set, k = 5, iterations = 1000) {
+  
+  # Separate response and predictors
+  X_train <- training_set[, -1]
+  y_train <- training_set$Y
+  
+  X_test <- test_set[, -1]
+  y_test <- test_set$Y
+  
+  
+  # Run Pareto subset selection -----------------
+  
+  pareto_results <- pareto_subset_selection(X = X_train, Y = y_train, k = k,
+                                            iterations = iterations)
+  
+  
+  # Selected predictor indices
+  selected <- pareto_results$selected_variables
+  
+  
+  # Fit final model
+
+  if (length(selected) == 0) {
+    
+    final_model <- lm(Y ~ 1, data = training_set)
+    
+  } else {
+    
+    selected_names <- names(X_train)[selected]
+    
+    formula <- as.formula(paste("Y ~", paste(selected_names, collapse = " + ")))
+    
+    final_model <- lm(formula, data = training_set)
+  }
+  
+  
+
+  # Predict test data --------------
+  predictions <- predict(final_model, newdata = test_set)
+  
+  # Test RMSE----------
+  RMSE <- sqrt(mean((y_test - predictions)^2))
+  
+  
+    # Test R-squared--------------
+  R_squared <- 1-sum((y_test - predictions)^2) / sum((y_test - mean(y_test))^2)
+  
+  
+  
+  
+   beta <- coef(final_model)
+  
+  return(
+    list(RMSE = RMSE, R_squared = R_squared, beta = beta, 
+         selected_variables = selected, 
+         subset_size = pareto_results$subset_size, 
+         training_R_squared = pareto_results$r2, 
+         archive = pareto_results$archive, model = final_model))
+}
+
+
+
+
+```
+
+
+```{r}
+#| include: false
+
+# Complete function workkflow
+
+subset_sel <- function(training_set, test_set) {
+  
+  # Run all 5 methods
+  forward_results <- entire_forward(training_set, test_set)
+  
+  backward_results <- entire_backward(training_set, test_set)
+  
+  ridge_results <- entire_ridge(training_set, test_set)
+  
+  lasso_results <- entire_lasso(training_set, test_set)
+  
+  pareto_results <- entire_pareto(training_set, test_set, k = 5, 
+                                  iterations = 1000)
+  
+  # Store performance results
+  results <- data.frame(
+    Method = c("Forward", "Backward", "Ridge", "LASSO", "POSS"),
+    
+    RMSE = c(forward_results$RMSE, backward_results$RMSE, ridge_results$RMSE,
+      lasso_results$RMSE, pareto_results$RMSE),
+    
+    R_squared = c(forward_results$R_squared, backward_results$R_squared, 
+                  ridge_results$R_squared, lasso_results$R_squared,
+                  pareto_results$R_squared))
+  
+  # Return all results
+  return(list(Performance = results, Forward = forward_results, 
+              Backward = backward_results, Ridge = ridge_results,
+              LASSO = lasso_results, POSS = pareto_results))
+}
+
+```
+
+
+```{r}
+#| include: false
+
+
+# SIMULATE DATA 
+
+# Scenario 1 - vary n
+set.seed(8)
+dat_50 <- simulate_data(n = 50)
+dat_100 <- simulate_data(n = 100)
+dat_250 <- simulate_data(n = 250)
+dat_500 <- simulate_data(n = 500)
+
+split_50  <- split_data(dat_50)
+split_100 <- split_data(dat_100)
+split_250 <- split_data(dat_250)
+split_500 <- split_data(dat_500)
+
+
+# Scenario 2 - vary predictor correlation
+dat_rho0 <- simulate_data(n = 100, rho = 0)
+dat_rho03 <- simulate_data(n = 100, rho = 0.3)
+dat_rho07 <- simulate_data(n = 100, rho = 0.7)
+dat_rho09 <- simulate_data(n = 100, rho = 0.9)
+
+split_rho0  <- split_data(dat_rho0)
+split_rho03 <- split_data(dat_rho03)
+split_rho07 <- split_data(dat_rho07)
+split_rho09 <- split_data(dat_rho09)
+
+# Scenario 3 - n x correlation combinations
+dat_50_independent <- simulate_data(n = 50, rho = 0)
+dat_50_correlated  <- simulate_data(n = 50, rho = 0.7)
+
+dat_250_independent <- simulate_data(n = 250, rho = 0)
+dat_250_correlated  <- simulate_data(n = 250, rho = 0.7)
+
+
+split_50_independent <- split_data(dat_50_independent)
+split_50_correlated  <- split_data(dat_50_correlated)
+
+split_250_independent <- split_data(dat_250_independent)
+split_250_correlated  <- split_data(dat_250_correlated)
+
+
+```
+
+
+
+```{r}
+#| include: false
+
+# APPLICATION
+
+# test funcion and its syntax
+#m <- subset_sel(split_50$train, split_50$test)
+
+dat_names <- c("split_50", 'split_100', 'split_250', 'split_500', 'split_rho0', 'split_rho03', 'split_rho07', 'split_rho09', 'split_50_independent', 'split_50_correlated', 'split_250_independent', 'split_250_correlated')
+
+
+datasets <- list(split_50, split_100, split_250, split_500, split_rho0, split_rho03, split_rho07, split_rho09, split_50_independent, split_50_correlated, split_250_independent, split_250_correlated)
+
+
+all_output <- data.frame(Method = NULL, RMSE = NULL, R_squared = NULL)
+
+for (i in 1:length(datasets)) {
+  sub_sel_output <- subset_sel(datasets[[i]]$train, datasets[[i]]$test)
+  performances <- sub_sel_output$Performance
+  performances <- cbind(performances, Dataset = c(rep(dat_names[i], 5)))
+  
+  all_output <- rbind(all_output, performances)
+}
+
+```
+
+
+```{r, include=FALSE}
+
+
+beta_output <- data.frame()
+
+for (i in 1:length(datasets)) {
+  
+  sub_sel_output <- subset_sel(datasets[[i]]$train, datasets[[i]]$test)
+  
+  methods <- c( "Forward", "Backward", "Ridge", "LASSO", "POSS")
+  
+  for (method in methods) {
+    
+    beta <- sub_sel_output[[method]]$beta
+    
+    temp <- data.frame(Dataset = dat_names[i], Method = method, 
+                       Predictor = names(beta), Beta = as.numeric(beta))
+    
+    beta_output <- rbind(beta_output, temp)
+  }
+}
+
+```
+
+
+# Introduction
+
+Regression models are widely used to investigate relationships between a response variable and a set of explanatory variables. When many predictors are available, however, including all variables in a model may result in unnecessary complexity and can make interpretation more difficult. Variable selection methods aim to identify a subset of predictors that provides an adequate representation of the relationship between the response and the explanatory variables while avoiding unnecessary variables.
+
+Several approaches to variable selection are available, each using a different strategy. Stepwise methods select variables sequentially according to a model selection criterion, while penalised regression methods such as Ridge and LASSO control model complexity by imposing penalties on the regression coefficients. In particular, LASSO can shrink some coefficients to zero, thereby performing variable selection, whereas Ridge generally retains all predictors while reducing the magnitude of their coefficients. The performance of these approaches can depend on characteristics of the data, such as sample size and the degree of correlation between predictors.
+
+This project investigates an alternative approach, Pareto Optimization Subset Selection (POSS), which treats variable selection as a multi-objective optimization problem. Rather than evaluating a subset according to a single model selection criterion, POSS considers two competing objectives: maximizing the explanatory power of the model, measured using $R^2$, while minimizing the number of predictors included. The resulting Pareto front represents the trade-off between model complexity and explanatory power, allowing different subsets to be considered according to their performance and size.
+
+The aim of this study is to compare POSS with Forward Stepwise, Backward Stepwise, Ridge and LASSO regression under controlled simulated conditions of varying sample size, predictor correlations, and combinations of both.
+
+
+# Methods
+
+## Classic subset selection methods
+Three conventional regression approaches were considered for comparison with Pareto Optimization Subset Selection: Forward Stepwise selection, Backward Stepwise selection, and penalized regression using Ridge and LASSO.
+
+Forward and Backward Stepwise selection are sequential variable selection procedures. Forward selection begins with an intercept-only model and sequentially adds predictors, while Backward selection begins with the full model containing all available predictors and sequentially removes predictors. In this study, the step() function in R (R Core Team, 2026) was used to implement both procedures, with Akaike's Information Criterion (AIC) used as the model selection criterion. The selected model was subsequently fitted to the training data and used to generate predictions for the test data.
+
+Ridge and LASSO are penalized regression methods that modify the least-squares objective by adding a penalty based on the regression coefficients. Ridge regression uses an $L_2$ penalty, which shrinks coefficient estimates towards zero but generally does not set them exactly equal to zero. LASSO uses an $L_1$ penalty, which can shrink individual coefficients to exactly zero and therefore performs variable selection. Both methods were implemented using the glmnet package (Friedman et al., 2010) in R. The penalty parameter ($\lambda$) was selected using cross-validation, with the value corresponding to the minimum cross-validation error (lambda.min) used for prediction.
+
+These methods provide different approaches to controlling model complexity. Stepwise methods explicitly add or remove predictors, LASSO performs selection through coefficient shrinkage, and Ridge controls coefficient magnitude without generally removing predictors. Their predictive performance was subsequently compared with that of POSS using the same training and test data.
+
+## Pareto Optimization Subset Selection
+Pareto Optimization Subset Selection (POSS) (Qian et al., 2015) was implemented as a multi-objective optimization approach to variable selection. The method considers two competing objectives: maximizing the $R^2$ of the fitted regression model while minimizing the number of predictors in the subset. Consequently, a subset is preferred when it provides greater explanatory power with equal or fewer predictors.
+
+For a candidate subset S, two quantities were calculated: the subset size, |S|, and the corresponding training $R^2$. A solution A was considered to dominate solution B if A had an $R^2$ at least as large as B, used no more predictors than B, and was strictly better in at least one of these objectives. Solutions that were not dominated were retained in an archive, representing the set of non-dominated solutions identified during the optimization process.
+
+The optimization began with an empty predictor subset. At each iteration, a solution was randomly selected from the current archive and represented as a binary vector indicating whether each predictor was included. Mutation was then applied independently to each predictor, with probability 1/p, where p is the total number of predictors. The resulting candidate subset was evaluated using a linear regression model. If the candidate was not dominated by an existing solution, it was added to the archive and any solutions dominated by the candidate were removed.
+
+A maximum subset size of (k=5) predictors was imposed. After the optimization procedure, only solutions containing at most five predictors were considered feasible, and the feasible solution with the highest training $R^2$ was selected as the final POSS model. The resulting archive was also retained to examine the Pareto front, which describes the trade-off between the number of predictors and training $R^2$.
+
+The optimization was run for 1000 iterations for each data set.
+
+
+## Data simulation and analysis
+Simulated data were generated to provide controlled conditions under which the behaviour of the different variable selection methods could be compared. Each dataset contained ten predictor variables. The predictor variables were generated from a multivariate normal distribution with mean zero and a covariance matrix in which all off-diagonal elements were equal to a specified correlation parameter, $\rho$, and all diagonal elements were equal to one.
+
+The response variable was generated according to the linear model
+
+$Y = X\boldsymbol{\beta} + \epsilon$,
+
+where $\epsilon \sim N(0,1)$. The coefficient vector was specified as (2, 1.5, 0, 0, -1, 0, 0, 0, 0, 0).
+
+
+Thus, three of the ten predictors had non-zero true effects, while the remaining seven predictors had zero coefficients. This known structure provided a controlled setting in which variable selection methods could be evaluated.
+
+Three simulation scenarios were considered. First, the effect of sample size was investigated using $n=50, 100, 250$, and $500$, with independent predictors ($\rho=0$). Second, the effect of predictor correlation was investigated using $\rho=0, 0.3, 0.7$, and $0.9$, with the sample size fixed at n=100. Finally, the combined effect of sample size and predictor correlation was investigated using four combinations: $(n,\rho)=(50,0), (50,0.7), (250,0), \text{and }(250,0.7)$.
+
+Each simulated dataset was divided into training and test sets, with 80% of observations allocated to the training set and the remaining 20% allocated to the test set. All variable selection and model fitting procedures were performed using the training data only. The fitted models were then used to predict the response for the held-out test observations.
+
+For each method, predictive performance was assessed using test-set Root Mean Squared Error (RMSE) and $R^2$. RMSE was calculated as $$RMSE = \sqrt{\frac{1}{n} \sum_{i=1}^{n} (y_i-\hat{y}_i)^2}$$ while test-set $R^2$ was calculated as
+
+$$RSS = 1- \frac{\sum (y_i-\hat{y}_i)^2}{\sum (y_i-\bar{y})^2}$$.
+
+Lower RMSE indicates smaller prediction errors, while higher $R^2$ indicates greater explanatory performance on the held-out test data.
+
+For POSS, the training $R^2$ and subset size were additionally recorded for the non-dominated solutions identified during optimisation. These values were used to construct Pareto-front plots, allowing the relationship between model complexity and explanatory power to be examined across the different sample-size scenarios.
+
+
+
+# Results
+## Subset selection methods under varying sample sizes
+Each of the 5 methods were applied to 4 different data sets, with sample sizes of 50, 100, 250 and 500. Figure 1 visualizes these results. Ridge regression is generally the worst performing (highest rmse and lowest $R^2$), except for when the sample size is extremely small (n = 50), which is when it performs better than all other methods. Pareto optimization subset selection  performs the best when sample sizes are moderate (n = 100 and n = 250). Lasso consistently performs well across all sample sizes. Foward and backward stepwise regression perform almost identically, and all methods (except ridge) have similar performances when the sample size is large (n = 500). Differences in performances of the methods are below 0.083 (RMSE) and 0.028 ($R^2$) (Table 1, Appendix).
+
+```{r, fig.height=6, fig.width= 10, fig.cap= "Evaluation of different subset methods while varying sample size."}
+#| echo: false
+vary_n_output <- all_output[1:20,]
+vary_n_output <- cbind(vary_n_output, Dataset_Number = c(rep(1,5), rep(2, 5), rep(3, 5), rep(4, 5)))
+vary_n_output_forward <- vary_n_output |> 
+  filter(Method == 'Forward')
+
+vary_n_output_backward <- vary_n_output |> 
+  filter(Method == 'Backward')
+
+vary_n_output_ridge <- vary_n_output |> 
+  filter(Method == 'Ridge')
+
+vary_n_output_lasso <- vary_n_output |> 
+  filter(Method == 'LASSO')
+
+vary_n_output_poss <- vary_n_output |> 
+  filter(Method == 'POSS')
+
+
+#par(mfrow = c(1,2), mar = c(4, 4, 2, 1))
+par(mfrow = c(1,2))
+
+plot(vary_n_output_forward$Dataset_Number, vary_n_output_forward$RMSE, type = 'l', col = 'forestgreen', lwd = 5, ylim = c(0.80, 1.25), ylab = "RMSE", xlab = "Datasets", main = "RMSE: Varying n", xaxt = 'n')
+axis(1, c(1:4), labels = c('n = 50', 'n = 100', 'n = 250', 'n = 500'))
+lines(vary_n_output_backward$Dataset_Number, vary_n_output_backward$RMSE, type = 'l', col = 'cyan', lwd = 2)
+lines(vary_n_output_ridge$Dataset_Number, vary_n_output_ridge$RMSE, type = 'l', col = 'magenta')
+lines(vary_n_output_lasso$Dataset_Number, vary_n_output_lasso$RMSE, type = 'l', col = 'orange2', lwd = 2)
+lines(vary_n_output_poss$Dataset_Number, vary_n_output_poss$RMSE, type = 'l', col = 'black', lwd = 2)
+legend('bottom',lwd = c(3, 1, 1, 2, 2), col = c('forestgreen', 'cyan','magenta', 'orange2', 'black'), legend = c('Forward', 'Backward', 'Ridge', 'Lasso', 'POSS'), cex = 1)
+
+
+plot(vary_n_output_forward$Dataset_Number, vary_n_output_forward$R_squared, type = 'l', col = 'forestgreen', lwd = 5, ylim = c(0.70, 1), ylab = "R Squared", xlab = "Datasets", main = "R Squared: Varying n", xaxt = 'n')
+axis(1, c(1:4), labels = c('n = 50', 'n = 100', 'n = 250', 'n = 500'))
+lines(vary_n_output_backward$Dataset_Number, vary_n_output_backward$R_squared, type = 'l', col = 'cyan', lwd = 2)
+lines(vary_n_output_ridge$Dataset_Number, vary_n_output_ridge$R_squared, type = 'l', col = 'magenta')
+lines(vary_n_output_lasso$Dataset_Number, vary_n_output_lasso$R_squared, type = 'l', col = 'orange2', lwd = 2)
+lines(vary_n_output_poss$Dataset_Number, vary_n_output_poss$R_squared, type = 'l', col = 'black', lwd = 2)
+legend('topleft',lwd = c(3, 1, 1, 2, 2), col = c('forestgreen', 'cyan','magenta', 'orange2', 'black'), legend = c('Forward', 'Backward', 'Ridge', 'Lasso', 'POSS'), cex = 1)
+
+```
+
+## Subset selection methods under varying predictor multicollinearity
+The differences in performances of the methods are far more drastic where predictors are correlated. The largest difference of RMSE (0.176) and $R^2$ (0.041) occurred for the data set with a collinearity of 0.7 (Figure 2, Table 2 in Appendix). The dataset with $\rho = 0.7$ results in a much higher rmse than all other correlated data sets. Ridge regression once again performs the worst in the presence of dependent predictors (Figure 2). All the methods are equivalent when variables are independent. However, Lasso is the best performing method once dependence is included among the predictors. Forward and backward regression once again performs similarly. POSS just performs better than Ridge regression. 
+
+```{r fig.height=6, fig.width=10, fig.cap= "Evaluation of different subset selection methods while varying multicollinearity between the predictor variables."}
+#| echo: false
+
+
+vary_rho_output <- all_output[21:40,]
+vary_rho_output <- cbind(vary_rho_output, Dataset_Number = c(rep(1,5), rep(2, 5), rep(3, 5), rep(4, 5)))
+vary_rho_output_forward <- vary_rho_output |> 
+  filter(Method == "Forward")
+
+vary_rho_output_backward <- vary_rho_output |> 
+  filter(Method == "Backward")
+
+vary_rho_output_ridge <- vary_rho_output |> 
+  filter(Method == "Ridge")
+
+vary_rho_output_lasso <- vary_rho_output |> 
+  filter(Method == "LASSO")
+
+vary_rho_output_poss <- vary_rho_output |> 
+  filter(Method == "POSS")
+
+par(mfrow = c(1, 2))
+
+
+# RMSE
+plot(vary_rho_output_forward$Dataset_Number,  vary_rho_output_forward$RMSE,  type = "l", col = "forestgreen",  lwd = 5, ylim = range(vary_rho_output$RMSE),  ylab = "RMSE",  xlab = "Datasets", main = "RMSE: Varying corr     ", xaxt = "n")
+axis(1, 1:4,labels = c( "rho = 0", "rho = 0.3", "rho = 0.7",  "rho = 0.9" ), las = 2)
+lines( vary_rho_output_backward$Dataset_Number, vary_rho_output_backward$RMSE, col = "cyan", lwd = 2)
+lines(vary_rho_output_ridge$Dataset_Number, vary_rho_output_ridge$RMSE, col = "magenta")
+lines(vary_rho_output_lasso$Dataset_Number, vary_rho_output_lasso$RMSE,  col = "orange2", lwd = 2)
+lines(vary_rho_output_poss$Dataset_Number, vary_rho_output_poss$RMSE, col = "black", lwd = 2)
+legend("topright", lwd = c(3, 1, 1, 2, 2), col = c("forestgreen",  "cyan",  "magenta", "orange2", "black"), legend = c("Forward", "Backward", "Ridge", "LASSO", "POSS"), cex = 1)
+
+
+# R-squared
+plot(vary_rho_output_forward$Dataset_Number, vary_rho_output_forward$R_squared, type = "l", col = "forestgreen", lwd = 5, ylim = range(vary_rho_output$R_squared), ylab = "R Squared", xlab = "Datasets", main = "R Squared: Varying corr     ", xaxt = "n")
+axis(1, 1:4, labels = c( "rho = 0", "rho = 0.3", "rho = 0.7", "rho = 0.9"), las = 2)
+lines(vary_rho_output_backward$Dataset_Number, vary_rho_output_backward$R_squared, col = "cyan", lwd = 2)
+lines(vary_rho_output_ridge$Dataset_Number, vary_rho_output_ridge$R_squared, col = "magenta")
+lines( vary_rho_output_lasso$Dataset_Number, vary_rho_output_lasso$R_squared, col = "orange2", lwd = 2)
+lines(vary_rho_output_poss$Dataset_Number, vary_rho_output_poss$R_squared, col = "black", lwd = 2)
+legend("bottomright", lwd = c(3, 1, 1, 2, 2), col = c( "forestgreen",  "cyan", "magenta", "orange2", "black"),legend = c("Forward", "Backward", "Ridge", "LASSO", "POSS"), cex = 1)
+
+```
+
+## Subset selection methods under varying predictor multicollinearity and sample size
+When both, sample size and multicollinearity, are adjusted, the performance measures are erratic (Figure 3) compared to the previous 2 investigations (Figures 1 and 2). Lasso is the best performing for a small (n = 50) dataset with independent predictor variables. For all other scenarios, forward and backward stepwise regression results in the lowest rmse and highest $R^2$ scores. However, for moderately large (n = 250), independent data sets, POSS is a better candidate.
+
+```{r fig.height=6, fig.width=10, fig.cap= "Evaluation of different subset selection methods while varying sample size and multicollinearity between the predictor variables."}
+#| echo: false
+
+
+vary_n_rho_output <- all_output[41:60,]
+vary_n_rho_output <- cbind(vary_n_rho_output, Dataset_Number = c(rep(1,5), rep(2, 5), rep(3, 5), rep(4, 5)))
+
+vary_n_rho_output_forward <- vary_n_rho_output |> 
+  filter(Method == "Forward")
+
+vary_n_rho_output_backward <- vary_n_rho_output |> 
+  filter(Method == "Backward")
+
+vary_n_rho_output_ridge <- vary_n_rho_output |> 
+  filter(Method == "Ridge")
+
+vary_n_rho_output_lasso <- vary_n_rho_output |> 
+  filter(Method == "LASSO")
+
+vary_n_rho_output_poss <- vary_n_rho_output |> 
+  filter(Method == "POSS")
+
+
+par(mfrow = c(1, 2))
+
+
+# RMSE
+plot(vary_n_rho_output_forward$Dataset_Number, vary_n_rho_output_forward$RMSE, type = "l", col = "forestgreen", lwd = 5, ylim = range(vary_n_rho_output$RMSE), ylab = "RMSE", xlab = "Datasets", main = "RMSE: Varying n and corr", xaxt = "n")
+axis(1, 1:4, labels = c("(50, 0)", "(50, 0.7)", "(250, 0)", "(250, 0.7)"),cex.axis = 1, las = 2)
+lines(vary_n_rho_output_backward$Dataset_Number, vary_n_rho_output_backward$RMSE, col = "cyan", lwd = 2)
+lines(vary_n_rho_output_ridge$Dataset_Number, vary_n_rho_output_ridge$RMSE, col = "magenta")
+lines(vary_n_rho_output_lasso$Dataset_Number, vary_n_rho_output_lasso$RMSE, col = "orange2", lwd = 2)
+lines(vary_n_rho_output_poss$Dataset_Number, vary_n_rho_output_poss$RMSE, col = "black", lwd = 2)
+legend("topright", lwd = c(3, 1, 1, 2, 2), col = c("forestgreen", "cyan", "magenta", "orange2", "black"), legend = c("Forward", "Backward", "Ridge", "LASSO",  "POSS"), cex = 1)
+
+
+# R-squared
+plot(vary_n_rho_output_forward$Dataset_Number, vary_n_rho_output_forward$R_squared, type = "l", col = "forestgreen", lwd = 5, ylim = range(vary_n_rho_output$R_squared), ylab = "R Squared", xlab = "Datasets", main = "R Squared: Varying n and corr", xaxt = "n")
+axis(1, 1:4, labels = c("(50, 0)", "(50, 0.7)", "(250, 0)", "(250, 0.7)"), las = 2, cex.axis = 1)
+lines(vary_n_rho_output_backward$Dataset_Number, vary_n_rho_output_backward$R_squared, col = "cyan", lwd = 2)
+lines(vary_n_rho_output_ridge$Dataset_Number, vary_n_rho_output_ridge$R_squared, col = "magenta")
+lines(vary_n_rho_output_lasso$Dataset_Number, vary_n_rho_output_lasso$R_squared, col = "orange2", lwd = 2)
+lines(vary_n_rho_output_poss$Dataset_Number, vary_n_rho_output_poss$R_squared, col = "black", lwd = 2)
+legend("top", lwd = c(3, 1, 1, 2, 2), col = c("forestgreen", "cyan", "magenta", "orange2", "black"), legend = c("Forward", "Backward", "Ridge", "LASSO", "POSS"), cex = 1)
+
+
+
+method_means <- all_output |> 
+  group_by(Method) |> 
+  summarise(Mean_RMSE = mean(RMSE), Mean_Rsq = mean(R_squared)) |> 
+  arrange(Mean_RMSE)
+  
+```
+
+
+## Effect of sample size on Pareto front
+
+Figure 4 demonstrates a fairly constant pareto front across various values of n. As the sample size increases, the $R^2$ generally decreases slightly. For 2 and 3 predictors, the data set with 50 observations resulted in a higher and lower $R^2$ values respectively (compared to all other sample sizes).  
+
+It is important to note that this pareto front represents the non-dominated solutions obtained by the stochastic optimization procedure within 1,000 iterations in this study. Therefore it should be interpreted as the solutions identified by the algorithm rather than an exhaustive set of non-doninated solutions.
+
+```{r}
+#| include: false
+# Pareto front vs n
+
+result50 <- entire_pareto(split_50$train, split_50$test, k = 5, iterations = 1000)
+
+pareto_df50 <- do.call(rbind,
+  lapply(result50$archive, function(x) {
+    data.frame(subset_size = x$size, R_squared = x$r2)
+  }))
+
+pareto_df50 <- unique(pareto_df50)
+pareto_df50 <- pareto_df50[order(pareto_df50$subset_size),]
+
+
+rownames(pareto_df50) <- NULL
+
+plot(pareto_df50$subset_size, pareto_df50$R_squared, type = "b", pch = 19, xlab = "Number of predictors", ylab = "R-squared", main = "Pareto Front, n = 50", ylim = c(0, 1))
+
+
+# ------------------------------------------------------------------------------
+
+
+result100 <- entire_pareto(split_100$train, split_100$test, k = 5, iterations = 1000)
+
+pareto_df100 <- do.call(rbind,
+  lapply(result100$archive, function(x) {
+    data.frame(subset_size = x$size, R_squared = x$r2)
+  }))
+
+pareto_df100 <- unique(pareto_df100)
+pareto_df100 <- pareto_df100[order(pareto_df100$subset_size),]
+
+
+rownames(pareto_df100) <- NULL
+
+plot(pareto_df100$subset_size, pareto_df100$R_squared, type = "p", pch = 19, xlab = "Number of predictors", ylab = "R-squared", main = "Pareto Front, n = 100", ylim = c(0, 1))
+
+
+# ------------------------------------------------------------------------------
+
+
+
+result250 <- entire_pareto(split_250$train, split_250$test, k = 5, iterations = 1000)
+
+pareto_df250 <- do.call(rbind,
+  lapply(result250$archive, function(x) {
+    data.frame(subset_size = x$size, R_squared = x$r2)
+  }))
+
+pareto_df250 <- unique(pareto_df250)
+pareto_df250 <- pareto_df250[order(pareto_df250$subset_size),]
+
+
+rownames(pareto_df250) <- NULL
+
+plot(pareto_df250$subset_size, pareto_df250$R_squared, type = "p", pch = 19, xlab = "Number of predictors", ylab = "R-squared", main = "Pareto Front, n = 250", ylim = c(0, 1))
+
+
+# ------------------------------------------------------------------------------
+
+
+result500 <- entire_pareto(split_500$train, split_500$test, k = 5, iterations = 1000)
+
+pareto_df500 <- do.call(rbind,
+  lapply(result500$archive, function(x) {
+    data.frame(subset_size = x$size, R_squared = x$r2)
+  }))
+
+pareto_df500 <- unique(pareto_df500)
+pareto_df500 <- pareto_df500[order(pareto_df500$subset_size),]
+
+
+rownames(pareto_df500) <- NULL
+
+plot(pareto_df500$subset_size, pareto_df500$R_squared, type = "p", pch = 19, xlab = "Number of predictors", ylab = "R-squared", main = "Pareto Front, n = 500", ylim = c(0, 1))
+
+
+```
+
+
+```{r, fig.cap= "Pareto front showing trade-off between the 2 objectives", fig.height= 5}
+#| echo: false
+
+plot(pareto_df50$subset_size, pareto_df50$R_squared, type = "b", pch = 19, xlab = "Number of predictors", ylab = "R-squared", main = "Pareto Front", ylim = c(0, 1), col = "orange2", cex = 1.4, lwd = 3)
+
+lines(pareto_df100$subset_size, pareto_df100$R_squared, type = "b", pch = 19, col = "red", cex = 1.2, lwd = 2)
+
+lines(pareto_df250$subset_size, pareto_df250$R_squared, type = "b", pch = 19, col = "purple1", cex = 1, lwd = 2)
+
+lines(pareto_df500$subset_size, pareto_df500$R_squared, type = "b", pch = 19, col = "blue", cex = 1, lwd = 2)
+
+legend("bottomright", pch = c(19, 19, 19, 19), col = c('orange2', 'red', 'purple1', 'blue'), legend = c("n = 50", "n = 100", "n = 250", "n = 500"))
+
+
+```
+
+
+Overall, the results illustrate differences in the predictive performance of the five regression methods across the simulated data scenarios. The relative performance of the methods varied with sample size and the degree of correlation between predictors, indicating that no single method achieved the same relative performance under every condition examined. The predictive performance measures also provide a different perspective from the Pareto-front analysis. While test-set RMSE and $R^2$ assess predictive performance on held-out observations, the Pareto front illustrates the trade-off between model complexity, measured by the number of selected predictors, and explanatory power, measured by training $R^2$. Consequently, the results provide complementary information about predictive performance and the relationship between model size and explanatory power.
+
+
+# Discussion
+
+## Effect of Sample Size
+
+The results indicate that the relative predictive performance of the regression methods varied across sample sizes. POSS performed competitively at sample sizes of n=100 and n=250, while LASSO demonstrated consistently competitive performance across the scenarios considered. At n=500, the predictive performance of most methods became more similar, although Ridge regression continued to perform poorly in relation to the others. This may indicate that the differences between some of the methods become less pronounced as more observations are available. However, the observed results do not establish a general relationship between sample size and method performance, as the simulation was performed only once for each scenario.
+
+The results for n=50 were less consistent with those observed at larger sample sizes. In particular, Ridge regression performed better than the other methods in this scenario. This illustrates that the relative performance of a method can depend on the particular sample generated, in addition to the sample size itself. The isolated nature of this result also highlights the importance of repeated simulation when assessing whether an observed pattern is systematic or due to random variation.
+
+## Effect of Multicollinearity
+
+The results suggest that predictor multicollinearity did affect the relative predictive performance of the methods. The largest observed difference between methods occurred at $\rho=0.7$, where the difference in RMSE was 0.176 and the difference in test-set $R^2$ was 0.041 (Table 2). The methods performed more similarly when the predictors were independent. LASSO performed competitively in the correlated scenarios, whereas ridge regression generally produced higher RMSE and lower test-set $R^2$ than the other methods.
+
+This is relevant because correlation between predictors can make it more difficult to distinguish their individual contributions to the response. Regularization methods such as ridge and LASSO address this issue by constraining coefficient estimates, while subset selection methods determine which predictors should be retained. Therefore, different approaches to controlling model complexity can lead to different predictive performance under multicollinearity.
+
+
+## Comparison with Qian, Yu and Zhou (2015)
+
+The findings differ from those reported by Qian et al. (2015). Their theoretical analysis provides approximation guarantees for sparse regression. Also, their empirical experiments found that POSS performed significantly better than the other methods considered in their study.
+
+The fact that POSS did not consistently outperform the other methods in the present study does not necessarily contradict these results. The two investigations differ in several important respects. Firstly, Qian et al. (2015) evaluated their methods on multiple data sets and repeated the train-test evaluation 100 times for each data set. Average training and test $R^2$ statistics were reported. Constrastingly, this study used one simulated dataset for each scenario. Hence, the current results are more sensitive to the particular random sample generated.
+
+Second, the data-generating structure used in the present study differs from the data sets and theoretical settings considered by Qian et al. (2015).  Their theoretical guarantees apply to specific properties of the sparse-regression problem rather than implying that POSS will alwasys have the highest predictive performance. In particular, the paper establishes an optimality result for the Exponential Decay subclass, rather than for arbitrary regression problems. The simulated data in the present study were generated from a specified linear regression model with ten predictors and controlled levels of predictor correlation. Therefore, the conditions under which the theoretical guarantees apply cannot simply be assumed to hold for the present simulation.
+
+Differences in the implementation and specification of the competing methods can also affect the relative performance observed.
+
+The optimization procedure itself is also relevant. POSS is a stochastic optimization method, so the solutions identified depend on the search process. This study used a finite number of optimization iterations. Therefore, the Pareto front obtained represents the non-dominated solutions identified by the algorithm within the specified computational budget rather than necessarily the complete set of globally non-dominated subsets. This provides another possible reason why the empirical behaviour of POSS in the present study may differ from that reported by Qian et al. (2015).
+
+## Comparison of the Regression Methods
+
+Across the scenarios considered, LASSO demonstrated consistently competitive predictive performance, while forward and backward stepwise selection produced very similar results. The similarity between the two stepwise methods suggests that, for the data sets considered, their different selection procedures resulted in comparable predictive performance. This does not necessarily mean that the two procedures selected exactly the same predictors, since similar predictive performance can be obtained from different subsets.
+
+POSS also performed competitively in several scenarios, particularly at n=100 and n=250 (Figure 1). This is important because POSS considers model size and predictive performance simultaneously. Rather than producing a single model through a fixed penalty, the Pareto approach identifies candidate subsets representing different trade-offs between subset size and the optimization criterion. This provides information about model complexity that is not directly provided by Ridge or LASSO.
+
+The combined sample-size and correlation results were less consistent. LASSO achieved the lowest RMSE for n=50 with independent predictors, while forward and backward stepwise selection performed best in several other combinations. POSS was also competitive for n=250 with independent predictors. These results indicate that the relative performance of the methods depended on the particular combination of sample size and predictor correlation, rather than following a single consistent ordering.
+
+## Pareto Front Analysis
+
+The Pareto-front analysis provided a complementary perspective to the test-set predictive measures. Test-set RMSE and $R^2$ describe predictive performance on observations not used to fit the models, whereas the Pareto front describes the trade-off between subset size and training set $R^2$. A subset is non-dominated when no other subset provides at least as much training explanatory power while using fewer predictors.
+
+The relatively similar Pareto fronts across sample sizes suggest that the trade-off between subset size and training explanatory power was very similar for the data sets considered. However, some variation was observed in the $R^2$ values associated with subsets of different sizes. In particular, the results for subsets containing two and three predictors differed between sample sizes. This indicates that increasing the number of predictors did not produce exactly the same improvement in training $R^$ across the generated data sets.
+
+The Pareto analysis should also be distinguished from predictive performance. A subset can have a high training $R^2$ while not necessarily producing the lowest test-set RMSE. Consequently, the Pareto front should not be interpreted as identifying a single universally optimal predictive model. Instead, it illustrates the trade-off between model complexity and fit to the training data. 
+
+
+## Limitations and further research
+
+A major consideration when interpreting the results is that only one simulation was performed for each combination of sample size and predictor correlation. This is one of the main restrictions. This substantially limits the strength of the conclusions that can be drawn. In a simulation study, different random samples generated under the same data-generating conditions can produce different estimates of model performance. Consequently, an observed result may reflect random variation in that particular data set rather than a generalized outcome. Future work could repeat each scenario many times and compare the average RMSE and test-set $R^2$ of each method, together with measures of variability. This would provide a stronger basis for determining whether the observed differences are systematic.
+
+This limitation is particularly important when comparing the present study with Qian et al. (2015). Their empirical evaluation repeatedly generated train-test splits and reported average performance over 100 repetitions. Repeated simulations would allow the mean performance of each method to be estimated together with its variability, making it possible to determine whether observed differences persist across repeated samples. Therefore, the results of the present study should be regarded as an illustration of the behaviour of the methods under the selected simulated conditions rather than as definitive evidence that one method generally performs better than another.
+
+Another consideration is the structure of the simulated data. The response was generated according to a specified linear relationship with ten predictors and controlled predictor correlations. This provides a useful controlled environment for investigating the methods, but it represents only one class of regression problems. Different relationships between predictors and the response, different noise levels, different numbers of predictors, and/or different correlation structures could produce different results.
+
+Furthermore, the pareto front depends on the stochastic search used to identify candidate subsets. Increasing the number of iterations could potentially identify additional non-dominated subsets, while different random search paths may produce different results. 
+
+Further research could investigate a wider range of data-generating structures. For example, nonlinear relationships, different noise levels, different numbers of relevant predictors, and stronger or more varied correlation structures could be considered. This would help determine whether the relative performance of POSS and the other methods changes under different regression conditions.
+
+For POSS specifically, future work could investigate the effect of the number of optimization iterations on the resulting Pareto front. Furthermore, Pareto optimization could be applied using different objective functions.
+
+
+
+# Appendix
+
+```{r}
+#| include: false
+#| tbl-cap: Performance measures such as RMSE and the coefficient of determination (R-squared) were collected for each subset selection method applied to each dataset of varying sample size.
+kable(vary_n_output[,-4], digits = 3, caption = "Performances measures such as rmse and the coefficient of determination (R squared) were collected for each subset selection method applied to each data set of varying sample size. Dataset Number 1 : n=50, Dataset Number 2 : n=100, Dataset Number 3 : n=250, Dataset Number 4 : n=500.")
+```
+
+::: {#tbl-results-n}
+|Method   |  RMSE| R_squared| Dataset_Number|
+|:--------|-----:|---------:|--------------:|
+|Forward  | 1.010|     0.801|              1|
+|Backward | 1.010|     0.801|              1|
+|Ridge    | 0.777|     0.883|              1|
+|LASSO    | 0.978|     0.814|              1|
+|POSS     | 0.969|     0.817|              1|
+|Forward  | 1.093|     0.844|              2|
+|Backward | 1.093|     0.844|              2|
+|Ridge    | 1.146|     0.828|              2|
+|LASSO    | 1.091|     0.844|              2|
+|POSS     | 1.029|     0.862|              2|
+|Forward  | 1.094|     0.856|              3|
+|Backward | 1.094|     0.856|              3|
+|Ridge    | 1.116|     0.850|              3|
+|LASSO    | 1.093|     0.857|              3|
+|POSS     | 1.081|     0.860|              3|
+|Forward  | 0.972|     0.837|              4|
+|Backward | 0.972|     0.837|              4|
+|Ridge    | 0.956|     0.842|              4|
+|LASSO    | 0.940|     0.847|              4|
+|POSS     | 0.930|     0.851|              4|
+
+Table: Performances measures such as rmse and the coefficient of determination (R squared) were collected for each subset selection method applied to each data set of varying sample size. Dataset Number 1 : n=50, Dataset Number 2 : n=100, Dataset Number 3 : n=250, Dataset Number 4 : n=500.
+:::
+
+
+```{r}
+#| include: false
+kable(vary_rho_output[,-4], digits = 3, caption = "Performances measures such as rmse and the coefficient of determination (R squared) were collected for each subset selection method applied to each data set of varying predictor multicollinearity. Dataset Number 1 : rho=0, Dataset Number 2 : rho=0.3, Dataset Number 3 : rho=0.7, Dataset Number 4 : rho=0.9.")
+```
+
+::: {#tbl-results-rho}
+|   |Method   |  RMSE| R_squared| Dataset_Number|
+|:--|:--------|-----:|---------:|--------------:|
+|21 |Forward  | 0.747|     0.933|              1|
+|22 |Backward | 0.747|     0.933|              1|
+|23 |Ridge    | 0.798|     0.924|              1|
+|24 |LASSO    | 0.857|     0.912|              1|
+|25 |POSS     | 0.703|     0.941|              1|
+|26 |Forward  | 0.948|     0.896|              2|
+|27 |Backward | 0.948|     0.896|              2|
+|28 |Ridge    | 0.980|     0.888|              2|
+|29 |LASSO    | 0.963|     0.892|              2|
+|30 |POSS     | 0.948|     0.896|              2|
+|31 |Forward  | 1.013|     0.893|              3|
+|32 |Backward | 1.013|     0.893|              3|
+|33 |Ridge    | 1.105|     0.872|              3|
+|34 |LASSO    | 0.996|     0.896|              3|
+|35 |POSS     | 1.030|     0.889|              3|
+|36 |Forward  | 1.329|     0.600|              4|
+|37 |Backward | 1.329|     0.600|              4|
+|38 |Ridge    | 1.483|     0.502|              4|
+|39 |LASSO    | 1.392|     0.561|              4|
+|40 |POSS     | 1.339|     0.594|              4|
+
+Table: Performances measures such as rmse and the coefficient of determination (R squared) were collected for each subset selection method applied to each data set of varying predictor multicollinearity. Dataset Number 1 : rho=0, Dataset Number 2 : rho=0.3, Dataset Number 3 : rho=0.7, Dataset Number 4 : rho=0.9.
+:::
+
+
+
+```{r, echo = F}
+kable(vary_n_rho_output[,-4], digits = 3, caption = "Performances measures such as rmse and the coefficient of determination (R squared) were collected for each subset selection method applied to each data set of varying predictor multicollinearity. Dataset Number 1 : n=50,rho=0, Dataset Number 2 : n=50,rho=0.7, Dataset Number 3 : n=250,rho=0, Dataset Number 4 : n=250,rho=0.7.")
+```
+
+::: {#tbl-results-n-rho}
+|   |Method   |  RMSE| R_squared| Dataset_Number|
+|:--|:--------|-----:|---------:|--------------:|
+|41 |Forward  | 1.093|     0.923|              1|
+|42 |Backward | 1.093|     0.923|              1|
+|43 |Ridge    | 1.399|     0.873|              1|
+|44 |LASSO    | 1.297|     0.891|              1|
+|45 |POSS     | 1.197|     0.907|              1|
+|46 |Forward  | 1.849|     0.493|              2|
+|47 |Backward | 1.675|     0.584|              2|
+|48 |Ridge    | 1.915|     0.457|              2|
+|49 |LASSO    | 1.686|     0.579|              2|
+|50 |POSS     | 1.849|     0.493|              2|
+|51 |Forward  | 1.042|     0.878|              3|
+|52 |Backward | 1.042|     0.878|              3|
+|53 |Ridge    | 1.053|     0.875|              3|
+|54 |LASSO    | 1.041|     0.878|              3|
+|55 |POSS     | 1.047|     0.876|              3|
+|56 |Forward  | 1.064|     0.884|              4|
+|57 |Backward | 1.064|     0.884|              4|
+|58 |Ridge    | 1.084|     0.879|              4|
+|59 |LASSO    | 1.078|     0.881|              4|
+|60 |POSS     | 1.062|     0.884|              4|
+
+Table: Performances measures such as rmse and the coefficient of determination (R squared) were collected for each subset selection method applied to each data set of varying predictor multicollinearity. Dataset Number 1 : n=50,rho=0, Dataset Number 2 : n=50,rho=0.7, Dataset Number 3 : n=250,rho=0, Dataset Number 4 : n=250,rho=0.7.
+:::
+
+
+
+# References
+
+* Friedman J, Hastie T, Tibshirani R (2010). “Regularization Paths for Generalized Linear Models via Coordinate Descent.” Journal of Statistical Software, 33(1), 1–22. doi:10.18637/jss.v033.i01. 
+
+* R Core Team (2026). _R: A Language and Environment for Statistical Computing_. R Foundation for
+  Statistical Computing, Vienna, Austria. doi:10.32614/R.manuals <https://doi.org/10.32614/R.manuals>.
+  <https://www.R-project.org/>.
+  
+* Qian, C., Yu, Y. and Zhou, Z.H., 2015. Subset selection by Pareto optimization. Advances in neural information processing systems, 28.

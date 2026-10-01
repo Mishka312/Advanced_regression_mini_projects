@@ -1,0 +1,682 @@
+---
+title: ""
+author: ""
+format:
+  typst:
+    toc: false
+---
+```{=typst}
+#align(center + horizon)[
+  #text(size: 24pt, weight: "bold")[
+    STA5090Z: Advanced Regression
+  ]
+
+  #v(1.5cm)
+
+  #text(size: 16pt)[
+    Mishka Ramraj
+  ]
+
+  #v(0.4cm)
+
+  #text(size: 14pt)[
+    RMRMIS001
+  ]
+
+  #v(1.5cm)
+
+  #v(0.4cm)
+
+  #text(size: 14pt)[
+    Mini Project 4: Functional Data Analysis
+  ]
+]
+
+#pagebreak()
+```
+
+```{=typst}
+#outline(title: [Table of contents], depth: 3)
+#pagebreak()
+
+```
+# Introduction
+
+Data has been increasingly available since the improvement of software and technology, which allowed for easier collection, storage and analysis. With this change, came new types of data and, consequently, new analyses. Apart from the conventional data structures of n observations of p variables, there are now also scenarios in which collecting numerous values per observation is necessary. For the sake of understanding, observations will be referred to as individuals or individual observations - some scenarios require multiple values per individual. For example, Ratcliffe et al. (2002) predicted if a pregnancy was normal or high risk by analyzing numerous heart rate measurements for each foetus in their study. This is an example of the predictor being functional in form, and the response being a scalar (Scalar on function regression). Rizk and Khan (2024) analysed the rate of spread of covid 19 over time using number of vaccinated people as a predictor. This is an example of functional on scalar regression. Furthermore, Qi and Luo (2018) studied the brain and used function on function regression to model fMRI measurements over time based on EEG measurements over time. Using scalar predict values to predict scalar response values is the conventional regression method. This study aims to explore and demonstrate the Function on scalar regression method. 
+
+
+
+# Method
+
+## Basic structures and methods
+
+Assume n is the number of observations, p is the number of predictor variables, and t is the number of measurements taken per observation. $\boldsymbol{X}$ is a n x (p+1) matrix of the form 
+
+$$ \boldsymbol{X} = 
+\begin{bmatrix}
+1 & x_{11} & x_{12} & x_{13} & ... & x_{1p} \\
+1 & x_{21} & x_{22} & x_{23} & ... &  x_{2p}\\
+1 & x_{31} & x_{32} & x_{33} & ... & x_{3p} \\
+\vdots & \vdots & \vdots & \vdots & \ddots & \vdots \\
+1 & x_{n1} & x_{n2} & x_{n3} & ... & x_{np}
+\end{bmatrix}
+$$
+
+$\boldsymbol{Y}$ is a n x t matrix of the structure
+
+$$ \boldsymbol{Y} = 
+\begin{bmatrix}
+y_{11} & y_{12} & y_{13} & ... & y_{1t} \\
+y_{21} & y_{22} & y_{23} & ... &  y_{2t}\\
+y_{31} & y_{32} & y_{33} & ... & y_{3t} \\
+\vdots & \vdots & \vdots & \ddots & \vdots \\
+y_{n1} & y_{n2} & y_{n3} & ... & y_{nt}
+\end{bmatrix}
+$$
+
+and $\boldsymbol{Y}(t)$ is equivalently 
+
+$$ \boldsymbol{Y}(t) = 
+\begin{bmatrix}
+Y_{1}(t) \\
+Y_{2}(t)\\
+Y_{3}(t) \\
+\vdots \\
+Y_{n}(t) 
+\end{bmatrix}
+$$
+
+
+
+The $\boldsymbol{\beta}$ matrix is of dimensions (p+1) x t, and has the following form:
+
+$$ \boldsymbol{\beta} = 
+\begin{bmatrix}
+\beta_{11} & \beta_{12} & \beta_{13} & ... & \beta_{1t} \\
+\beta_{21} & \beta_{22} & \beta_{23} & ... &  \beta_{2t}\\
+\beta_{31} & \beta_{32} & \beta_{33} & ... & \beta_{3t} \\
+\vdots & \vdots & \vdots & \ddots & \vdots \\
+\beta_{p1} & \beta_{p2} & \beta_{p3} & ... & \beta_{pt}
+\end{bmatrix}
+$$
+
+and $\boldsymbol{\beta}(t)$ is equivalently 
+
+$$ \boldsymbol{\beta}(t) = 
+\begin{bmatrix}
+\beta_{1}(t) \\
+\beta_{2}(t)\\
+\beta_{3}(t) \\
+\vdots \\
+\beta_{p}(t) 
+\end{bmatrix}
+$$
+
+The general regression equation is $$y_i(t)  = \sum_{j = 0}^{p}\beta_j(t)X_{ij} + \epsilon_i(t)$$
+
+In matrix notation,  $$Y(t) = \boldsymbol{X} \boldsymbol{\beta}(t) + \boldsymbol{\epsilon(t)}$$ This is equivalent to standard multiple linear regression of $Y$ on $X$ for each value of t (Gertheiss et al, 2013; Rizk and Khan, 2024).  
+
+The residual sum of squares is calculated as:  
+
+$$RSS = [\boldsymbol{Y} - \boldsymbol{\hat{Y}}]^2  = [\boldsymbol{Y} - \boldsymbol{X\hat{\beta}}]^2$$
+
+When t = $t_k$,
+$$RSS(t_k) = [\boldsymbol{Y(t_k)} - \boldsymbol{X\hat{\beta}(t_k)}]^2 $$
+The optimal coefficient values are those that minimize the total sum of squares: 
+$$\boldsymbol{\hat\beta(t_k)} = \arg\min_{\boldsymbol{\hat\beta(t_k)}} RSS(t_k)$$
+
+To find the optimal solution for $\boldsymbol{\hat\beta(t_k)}$, differentiate $RSS(t_k)$ with regards to $\boldsymbol{\hat\beta(t_k)}$:
+
+$$RSS(t_k) = [\boldsymbol{Y(t_k)} - \boldsymbol{X\hat{\beta}(t_k)}]^T [\boldsymbol{Y(t_k)} - \boldsymbol{X\hat{\beta}(t_k)}]$$
+$$= [\boldsymbol{Y(t_k)^T} - \boldsymbol{\hat{\beta}(t_k)^TX^T}] [\boldsymbol{Y(t_k)} - \boldsymbol{X\hat{\beta}(t_k)}]$$
+
+$$ = \boldsymbol{Y(t_k)}^T \boldsymbol{ Y(t_k)} - 2\boldsymbol{\hat{\beta}(t_k)^TX^T}\boldsymbol{Y(t_k)}  + \boldsymbol{\hat{\beta}(t_k)^TX^T} \boldsymbol{X\hat{\beta}(t_k)}$$
+
+
+$$\frac{\partial RSS(t_k)}{\partial \boldsymbol{\hat\beta(t_k})} = -2\boldsymbol{X^T}\boldsymbol{Y(t_k)} + 2 \boldsymbol{X^T} \boldsymbol{X\hat{\beta}(t_k)}$$
+To find optimal values that minimize the RSS, set the derivative to 0 and solve:
+
+$$-2\boldsymbol{X^T}\boldsymbol{Y(t_k)} + 2 \boldsymbol{X^T} \boldsymbol{X\hat{\beta}(t_k)} = 0$$
+
+$$\boldsymbol{X^T} \boldsymbol{X\hat{\beta}(t_k)} = \boldsymbol{X^T}\boldsymbol{Y(t_k)}$$
+
+$$(\boldsymbol{X^T} \boldsymbol{X})^{-1} (\boldsymbol{X^T} \boldsymbol{X})\boldsymbol{\hat{\beta}(t_k)} = (\boldsymbol{X^T} \boldsymbol{X})^{-1} \boldsymbol{X^T}\boldsymbol{Y(t_k)}$$
+$$\boldsymbol{\hat{\beta}(t_k)} = (\boldsymbol{X^T} \boldsymbol{X})^{-1} \boldsymbol{X^T}\boldsymbol{Y(t_k)}$$
+
+Hence, the solution to the coefficients at t= $t_k$ is the same as the ordinary least squares solution. Therefore, function on scalar regression can be done by implementing a standard regression models for each measurement step (t).
+
+
+
+## Implementation
+
+A data set of 1 predictor variable with 100 observations, each with 100 response measurements over time was simulated. The predictor values were generated from a standard normal distribution. The intercept function was set as $\beta_0(t) = 2 + \text{sin(2 x pi x t)}$ and $\beta_1 = 2 \times t$. The response values were generated using $y_i(t)  = \sum_{j = 0}^{1}\beta_j(t)X_{ij} + \epsilon_i(t)$, where random error ($\epsilon$) was generated from a $\mathcal{N}(0, 0.5^2)$ distribution, and time (t) is 100 values ranging from 0 to 1.  
+
+To fit the function on scalar model, a linear model was applied to the predictor variable and the response values at each $t_k$, where k = 1, ..., 100. From here, the $\hat\beta_0$ and $\hat\beta_1$ coefficients were extracted and used to calculate $\hat Y(t)$. Since the data is simulated, true patterns and relationships are known.Therefore, true and estimated/predicted coefficients/response values were compared and performance indicators such as root mean square errors were calculated.
+
+
+# Results and Discussion
+
+
+
+
+```{r Generate_data}
+#| message: false
+#| include: false
+library(tidyverse)
+
+set.seed(8)
+
+
+n <- 100       # n observations
+m <- 100       # n points per curve
+
+# argument/imput for functional Y
+t <- seq(0, 1, length.out = m)
+
+# Scalar predictor
+X <- rnorm(n, mean =0, sd = 1)
+
+
+
+# True coefficient functions --------
+
+beta0 <- 2 + sin(2 *pi * t)  # true intercept function
+#beta0 <- 2 + t^2
+#beta0 <- 2 + t 
+
+beta1 <- 2 * t                # true slope function for predictor var
+# Implies  new intercept and slope for every t step
+
+
+# Generate functional responses ------------
+
+sigma <- 0.5
+
+# functional Y => multiple Y vals per individual/observation
+# 100 obs, 100 ttime steps (t) => 100 x 100 matrix
+Y <- matrix(NA, nrow = n,ncol = m)
+
+set.seed(8)
+for (i in 1:n) {  # for each observation
+  # for each individual (eg Y1), multiple values response values 
+  # (forming curve) associated since multiple B0 and B1 values
+  ##### SAME X VALUE USED TO GET ALLL Y VALUES FOR AN INDIVIDUAL        
+  Y[i, ] <- beta0 + beta1 * X[i] + rnorm(m, mean = 0, sd = sigma)
+}
+```
+
+```{r long_format}
+#| include: false
+# create a row for each unique combo of individual (id - signifies a single 
+# observation) and t
+data <- expand.grid(ID = 1:n, t = t)
+
+######## ONE PREDICTOR VAR PER OBSERVATION/INDIVIDUAL/ ID
+######## SAME VALUE RECYCLED THROUGH REGRESSION EQN
+data$X <- X
+
+data$Y <- as.vector(t(Y))
+```
+
+```{r functional_responses_plot, fig.cap="Plot showing the simulated response functions. Each curve is an individual observation measured over time"}
+#| warning: false
+#| include: false
+
+#plot(data$t, data$Y, type = 'l') # this is wrong, does not plot curves
+
+#plot(data[data$ID == 1,]$t, data[data$ID == 1,]$Y, type = 'l')
+
+# Each individual has their own line curvw
+### Plot a curve for each id
+
+ids <- unique(data$ID)
+cols <- hcl.colors(length(ids), palette = "Dark 3")
+
+plot(NA, xlim = range(data$t), ylim = range(data$Y),xlab = "t", ylab = "Y(t)",
+  main = "Simulated Functional Responses")
+
+for (i in seq_along(ids)) {
+  d <- data[data$ID == ids[i], ]
+  
+  lines(d$t, d$Y,col = cols[i], lwd = 1.5)
+}
+
+
+```
+
+```{r true_coefficient_functions_ploy}
+#| include: false
+true_coef <- data.frame(t = t,  beta0 = beta0, beta1 = beta1)
+
+plot(true_coef$t, true_coef$beta0, type = 'l', lwd = 2, xlab = "t", ylab = expression(beta[0](t)), main = "True coefficient function")
+
+plot(true_coef$t, true_coef$beta1, type = 'l', lwd = 2, xlab = "t", ylab = expression(beta[1](t)), main = "True coefficient function")
+```
+
+```{r FoS_model}
+#| include: false
+# for each location, extract the value of the response for each individuals 
+# curve (Yi) 
+# eg when t = 1, function retreives all Y11, Y21, Y31..., Yn1
+# applied to all rows (individual) , ie, all t is eventually cycled through
+
+models <- lapply(
+  1:m,
+  function(j) {lm(Y[, j] ~ X)})
+
+# equivalent to simple linear regression for each location
+```
+
+```{r est_coefficient_functions}
+#| include: false
+
+# For each location t, extract each coefficient 
+beta0_hat <- sapply(models, function(model) coef(model)[1])
+
+beta1_hat <- sapply(models, function(model) coef(model)[2])
+```
+
+
+
+```{r coeff_est_error}
+#| include: false
+rmse_beta0 <- sqrt(mean((beta0_hat - beta0)^2))
+#rmse_beta0
+
+rmse_beta1 <- sqrt(mean((beta1_hat - beta1)^2))
+#rmse_beta1
+```
+
+```{r Predict_Y}
+#| include: false
+Y_hat <- matrix(NA, nrow = n, ncol = m)
+
+# for each observation, get value at each location t of curve
+
+for (i in 1:n) {
+  Y_hat[i, ] <- beta0_hat + beta1_hat * X[i]
+}
+```
+
+```{r Pred_err}
+#| include: false
+rmse_prediction <- sqrt(mean((Y - Y_hat)^2))  # element wise calculation
+
+#rmse_prediction
+```
+
+
+```{r long_format2}
+#| include: false
+pred_data <- expand.grid(ID = 1:n, t = t)
+pred_data$X <- X
+pred_data$Y <- as.vector(t(Y_hat))
+```
+
+Figure 1 shows that the general pattern of the response was retained, although the predicted curves are less erratic and appear to not overlap as much. Most individual predicted curves follow the similar pattern, whereas in the simulated curves, there is not such a clear match in trajectory amongst the observations. The difference between the simulated and predicted curves is largely due to the random error included when generating the simulated responses. The simulated response for each individual is given by
+
+$$
+Y_i(t)=\beta_0(t)+\beta_1(t)X_i+\epsilon_i(t),
+$$
+
+where the first two terms represent the systematic component of the response and $\epsilon_i(t)$ represents random variation. In contrast, the fitted response is given by
+
+$$
+\hat{Y}_i(t)=\hat{\beta}_0(t)+\hat{\beta}_1(t)X_i,
+$$
+
+and estimates the conditional mean response rather than the individual random error. Thus, the smoother appearance of the predicted curves does not necessarily indicate that complexity has been lost from the model. Instead, the predicted curves do not reproduce the observation-specific random variation present in the simulated responses.
+
+```{r TvsP_response, fig.cap="Plot showing the simulated and predicted response functions. Each curve is an individual observation measured over time", fig.height=10, fig.width=8}
+#| echo: false
+#| message: false
+
+par(mfrow = c(2,1))
+
+plot(NA, xlim = range(data$t), ylim = range(data$Y),xlab = "t", ylab = "Simulated Y(t)",
+  main = "A. Simulated Functional Responses")
+
+for (i in seq_along(ids)) {
+  d <- data[data$ID == ids[i], ]
+  
+  lines(d$t, d$Y,col = cols[i], lwd = 1.5)
+}
+
+
+
+
+
+plot(NA, xlim = range(pred_data$t), ylim = range(pred_data$Y),xlab = "t", ylab = "Predicted Y(t)",
+  main = "B. Predicted Functional Responses")
+
+for (i in seq_along(ids)) {
+  d <- pred_data[pred_data$ID == ids[i], ]
+  
+  lines(d$t, d$Y,col = cols[i], lwd = 1.5)
+}
+
+
+```
+
+
+The loss of complexity is demonstrated more explicitly in Figure 2. The predicted curve is considerably smoother than the observed curve. This difference is expected because the observed response contains both the systematic component of the model and the random error, whereas the predicted response represents an estimate of the conditional mean. Therefore, the predicted curve is not expected to reproduce the random fluctuations present in the observed response.
+
+The RMSE between the observed and predicted response curves was 0.495. This value is close to the standard deviation of the random error used in the simulation, $\sigma=0.5$. This is expected because the difference between an observed response and its fitted value contains the random error that is not estimated as part of the conditional mean. Consequently, the similarity between the prediction RMSE and the specified error standard deviation suggests that a substantial proportion of the discrepancy between the observed and predicted curves is attributable to random variation rather than poor estimation of the coefficient functions.
+
+Figures 3 and 4 show that the coefficient curves were estimated fairly accurately. The RMSE between the true and estimated coefficient functions was 0.044 for $\beta_0$ and 0.055 for $\beta_1$. The relatively small RMSE values indicate that the point-wise OLS procedure was able to recover the underlying coefficient functions reasonably well for the simulated data. The estimated coefficient functions generally follow the corresponding true functions across the time domain.
+
+The two coefficient functions differ in their underlying forms. The intercept function, $\beta_0(t)=2+\sin(2\pi t)$, is nonlinear and changes direction across the time domain, whereas the slope function, $\beta_1(t)=2t$, has a simple linear form. Despite this difference, both coefficient functions were estimated with relatively small errors. This indicates that the point-wise regression approach was able to recover both the nonlinear intercept function and the linear slope function for this simulation.  
+
+The difference between the coefficient-function RMSE values and the response-prediction RMSE also illustrates the distinction between estimating the underlying regression relationship and reproducing individual observations. The coefficient-function RMSE values were relatively small, while the RMSE between the observed and predicted functional responses was larger. This is not contradictory because the observed responses contain random error that is not represented in the fitted conditional mean. Therefore, accurate estimation of $\beta_0(t)$ and $\beta_1(t)$ does not imply that every individual observed curve will be reproduced closely.
+
+
+```{r Eg_prediction, fig.cap= "Plot of the true and predicted response for the first observation."}
+#| echo: false
+prediction_data <- data.frame(t = t, observed = Y[1, ], predicted = Y_hat[1, ])
+
+
+plot(prediction_data$t, prediction_data$observed, type = 'l', lwd = 2, 
+     xlab = 't', ylab = 'Y(t)', 
+     main = "Observed vs Predicted Functional Response for 1st observation")
+lines(prediction_data$t, prediction_data$predicted, lwd = 2, col = 'red')
+legend("topright", lwd = c(2,2), col = c("black", "red"), 
+       legend = c("Observed", "Predicted"))
+```
+It is important to notice that there are some rapid changes in the coefficient values. For example, $\beta_0$ is fairly erratic when $t$ is approximately 0.2 and 0.3 (Figure 3). Likewise, $\beta_1$ experiences a sudden increase in its value at approximately $t=0.37$ (Figure 4). Wiggliness in the coefficient functions in this context can be attributed to the method of their estimation. The $\beta$ coefficients were estimated in batches, according to the time ($t$) value. This means that $\beta(t_1)$ was estimated independently from $\beta(t_2)$, and similarly for all other $\beta(t_k)$ batches.
+
+Consequently, the pointwise OLS procedure does not explicitly impose a relationship between coefficient estimates at neighbouring values of $t$. Even when $t_1$ and $t_2$ are close together, the estimates $\hat{\beta}(t_1)$ and $\hat{\beta}(t_2)$ are obtained from separate regressions. Sampling variability can therefore cause neighbouring coefficient estimates to differ, resulting in the local fluctuations observed in Figures 3 and 4. This is a limitation of estimating the coefficient functions independently at each measurement point and provides motivation for methods that estimate the coefficient functions simultaneously while incorporating information across the time domain.
+
+
+
+
+```{r estimated_beta0_plot, fig.cap="Plot of the true and estimated intercept function"}
+#| echo: false
+
+results <- data.frame(t = t, beta0 = beta0, beta0_hat = beta0_hat, 
+                      beta1 = beta1, beta1_hat = beta1_hat)
+
+
+plot(results$t, results$beta0, type = 'l', lwd = 2, xlab = 't', ylab = expression(beta[0](t)), main = "True vs Estimated B0 Coefficient Function")
+lines(results$t, results$beta0_hat, lwd = 2, col = 'red')
+legend("bottomleft", lwd = c(2,2), col = c("black", "red"), legend = c("True", "Estimated"))
+```
+
+```{r, estimated_beta1_plot,echo=FALSE,  fig.cap="Plot of the true and estimated slope function"}
+
+plot(results$t, results$beta1, type = 'l', lwd = 2, xlab = 't', ylab = expression(beta[1](t)), main = "True vs Estimated B1 Coefficient Function")
+lines(results$t, results$beta1_hat, lwd = 2, col = 'red')
+legend("bottomright", lwd = c(2,2), col = c("black", "red"), legend = c("True", "Estimated"))
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## Extension: Improved estimation using basis functions and regularization
+
+Instead of estimating each coefficient independently at every measurement point, the
+coefficient functions can be represented using basis functions (Reiss et al., 2011).
+
+For predictor $j$, let
+
+$$
+\beta_j(t)
+=
+\sum_{l=1}^{K}
+b_{jl}\phi_l(t)
+$$
+
+where $\phi_l(t)$ is the $l^{th}$ basis function, $b_{jl}$ is an unknown
+basis coefficient, and $K$ is the number of basis functions.
+
+The coefficient function can therefore be written as
+
+$$
+\beta_j(t)
+=
+b_{j1}\phi_1(t)
++
+b_{j2}\phi_2(t)
++
+\cdots
++
+b_{jK}\phi_K(t).
+$$
+
+For $p$ predictor variables,
+
+$$
+\boldsymbol{\beta}(t)
+=
+\begin{bmatrix}
+\beta_0(t)\\
+\beta_1(t)\\
+\vdots\\
+\beta_p(t)
+\end{bmatrix}
+$$
+
+becomes
+
+$$
+\boldsymbol{\beta}(t)
+=
+\begin{bmatrix}
+\displaystyle\sum_{l=1}^{K}b_{0l}\phi_l(t)\\[6pt]
+\displaystyle\sum_{l=1}^{K}b_{1l}\phi_l(t)\\
+\vdots\\
+\displaystyle\sum_{l=1}^{K}b_{pl}\phi_l(t)
+\end{bmatrix}.
+$$
+
+The function-on-scalar model is
+
+$$
+Y_i(t)
+=
+\sum_{j=0}^{p}
+X_{ij}\beta_j(t)
++
+\epsilon_i(t).
+$$
+
+Substituting the basis expansion gives
+
+$$
+Y_i(t) = \sum_{j=0}^{p} X_{ij} \left( \sum_{l=1}^{K} b_{jl}\phi_l(t) \right) + \epsilon_i(t).$$
+
+$$ =\sum_{j=0}^{p}\sum_{l=1}^{K}X_{ij}b_{jl}\phi_l(t) + \epsilon_i(t).$$
+
+The fitted values are therefore
+
+$$
+\hat{Y}_i(t) = \sum_{j=0}^{p} \sum_{l=1}^{K} X_{ij}\hat{b}_{jl}\phi_l(t). $$
+
+
+
+
+### Measuring model error
+
+For observation i, the residual function is
+
+$$
+e_i(t)
+=
+Y_i(t)-\hat{Y}_i(t).
+$$
+
+The squared residual at a single value of t is
+
+$$
+e_i(t)^2
+=
+[Y_i(t)-\hat{Y}_i(t)]^2.
+$$
+
+Unlike ordinary regression, where a single response value is observed, the
+response is now a function observed over the domain ${T}$. Therefore,
+the total error for observation i is calculated by integrating the squared
+residuals:
+
+$$
+ISE_i
+=
+\int_{T}
+[Y_i(t)-\hat{Y}_i(t)]^2dt.
+$$
+
+Summing across all observations gives the integrated sum of squared errors:
+
+$$
+ISSE
+=
+\sum_{i=1}^{n}
+\int_{\mathcal T}
+[Y_i(t)-\hat{Y}_i(t)]^2dt.
+$$
+
+Substituting the fitted model:
+
+$$
+ISSE
+=
+\sum_{i=1}^{n}
+\int_{\mathcal T}
+\left[
+Y_i(t)
+-
+\sum_{j=0}^{p}
+\sum_{l=1}^{K}
+X_{ij}b_{jl}\phi_l(t)
+\right]^2dt.
+$$
+
+The optimal basis coefficients are those that minimise the integrated sum of
+squared errors  (Reiss et al., 2011):
+
+$$
+\hat{\boldsymbol b}
+=
+\arg\min_{\boldsymbol b}
+ISSE.
+$$
+
+
+
+### Regularisation
+
+When a large number of basis functions are used, the estimated coefficient
+functions may become excessively irregular. To encourage smooth coefficient
+functions, a roughness penalty can be added.
+
+A common measure of roughness is based on the second derivative(Reiss et al., 2011):
+
+$$
+R_j
+=
+\int_{\mathcal T}
+[\beta_j''(t)]^2dt.
+$$
+
+Large values of $\beta_j''(t)$ indicate rapid changes in the coefficient
+function and therefore greater roughness.
+
+The total penalty is:
+
+$$
+Penalty
+=
+\sum_{j=0}^{p}
+\lambda_j
+\int_{\mathcal T}
+[\beta_j''(t)]^2dt,
+$$
+
+where $\lambda_j=0$ implies no smoothing, while larger values of
+$\lambda_j$ place a greater penalty on roughness and therefore produce
+smoother coefficient functions.
+
+The penalised objective function becomes:
+
+$$
+PISSE
+=
+ISSE
++
+Penalty
+$$
+
+or equivalently:
+
+$$
+PISSE
+=
+\sum_{i=1}^{n}
+\int_{\mathcal T}
+[Y_i(t)-\hat{Y}_i(t)]^2dt
++
+\sum_{j=0}^{p}
+\lambda_j
+\int_{\mathcal T}
+[\beta_j''(t)]^2dt.
+$$
+
+The optimal basis coefficients are therefore obtained by minimizing the
+penalized objective function:
+
+$$
+\hat{\boldsymbol b}
+=
+\arg\min_{\boldsymbol b}
+PISSE.
+$$
+
+After obtaining the optimal basis coefficients, the coefficient functions are
+reconstructed as:
+
+$$
+\hat{\beta}_j(t)
+=
+\sum_{l=1}^{K}
+\hat{b}_{jl}\phi_l(t).
+$$
+
+The fitted response functions are then:
+
+$$
+\hat{Y}_i(t)
+=
+\sum_{j=0}^{p}
+X_{ij}\hat{\beta}_j(t).
+$$
+The basis-function approach provides an alternative to estimating the coefficient functions independntly at each measurement point. In the point-wise approach used in this study, each coefficient value was estimated separately, which resulted in some local fluctuations in the estimated coefficient functions. Representing the coefficient functions using basis functions instead allows information across the time domain to contribute to the estimation of the entire function. Furthermore, the addition of a roughness penalty allows the degree of smoothness to be controlled, reducing the influence of local fluctuations when appropriate.
+
+This approach therefore addresses one of the main limitations observed in the point-wise estimates. However, the choice of basis functions, number of basis functions, and smoothing parameters can affect the resulting coefficient functions. These choices would need to be investigated when applying the method to data. Further studies could implement the penalized basis-function approach on the simulated data used in this study and compare the estimated coefficient functions, prediction errors, and computational results with those obtained from the point-wise OLS approach.
+
+
+
+
+
+# References
+
+* [1] Gertheiss, J., Maity, A. and Staicu, A.M., 2013. Variable selection in generalized functional linear models. Stat, 2(1), pp.86-101.
+
+
+* [2] Ratcliffe, S.J., Heller, G.Z. and Leader, L.R., 2002. Functional data analysis with application to periodically stimulated foetal heart rate data. II: Functional logistic regression. Statistics in medicine, 21(8), pp.1115-1127. 
+
+* [3] Rizk, Z. and Khan, N., 2024. The effect of vaccine on COVID-19 spread by function-on-scalar regression model: a case study of Africa. Journal of Public Health, 32(7), pp.1177-1186.
+
+
+* [4] Qi, X. and Luo, R., 2018. Function-on-function regression with thousands of predictive curves. Journal of Multivariate Analysis, 163, pp.51-66.
+
+* [5] Reiss, P.T., Mennes, M., Petkova, E., Huang, L., Hoptman, M.J., Biswal, B.B., Colcombe, S.J., Zuo, X.N. and Milham, M.P., 2011. Extracting information from functional connectivity maps via function-on-scalar regression. NeuroImage, 56(1), pp.140-148.
